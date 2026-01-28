@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Plane, Plus, Calendar, MapPin, MoreHorizontal, Edit2, Trash2, Share2, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
-import { createShare, setShareEnabled } from "@/lib/share"
+import { createShare, hashPassword, setShareEnabled } from "@/lib/share"
 import { TripModal } from "@/components/trip-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
 import Link from "next/link"
@@ -45,6 +45,8 @@ export default function HomePage() {
   const [shareDocId, setShareDocId] = useState<string | null>(null)
   const [shareEnabled, setShareEnabledState] = useState(true)
   const [shareCopied, setShareCopied] = useState(false)
+  const [sharePasswordEnabled, setSharePasswordEnabled] = useState(false)
+  const [sharePassword, setSharePassword] = useState("")
   const sharePickerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -63,6 +65,8 @@ export default function HomePage() {
     setShareLink("")
     setShareDocId(null)
     setShareEnabledState(true)
+    setSharePasswordEnabled(false)
+    setSharePassword("")
   }, [selectedShareTripId, shareModalOpen])
 
   useEffect(() => {
@@ -149,8 +153,11 @@ export default function HomePage() {
     setShareLoading(true)
     setShareError("")
     try {
+      const passwordHash = sharePasswordEnabled && sharePassword.trim()
+        ? await hashPassword(sharePassword.trim())
+        : null
       const shareId = await Promise.race([
-        createShare(payload),
+        createShare(payload, passwordHash),
         new Promise<string>((_, reject) =>
           window.setTimeout(() => reject(new Error("timeout")), 10000)
         ),
@@ -160,6 +167,9 @@ export default function HomePage() {
       setShareDocId(shareId)
       setShareEnabledState(true)
       setActiveShare(trip.id, shareId, true)
+      if (passwordHash) {
+        localStorage.setItem(`trav-share-pass:${shareId}`, passwordHash)
+      }
     } catch (error) {
       console.error("Share link creation failed", error)
       setShareError("링크 생성에 실패했습니다. Firestore가 활성화되어 있는지 확인해 주세요.")
@@ -502,6 +512,29 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">비밀번호 설정</span>
+                <button
+                  type="button"
+                  onClick={() => setSharePasswordEnabled((prev) => !prev)}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                    sharePasswordEnabled ? "bg-emerald-500 text-white" : "bg-white text-slate-500 border border-slate-200"
+                  }`}
+                >
+                  {sharePasswordEnabled ? "사용" : "없음"}
+                </button>
+              </div>
+              {sharePasswordEnabled && (
+                <input
+                  type="password"
+                  value={sharePassword}
+                  onChange={(event) => setSharePassword(event.target.value)}
+                  placeholder="비밀번호 입력"
+                  className="mt-3 w-full rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                />
               )}
             </div>
             <div className="mt-6 flex gap-3">

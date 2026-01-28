@@ -10,6 +10,8 @@ import { ConfirmModal } from "@/components/confirm-modal"
 import { TripModal } from "@/components/trip-modal"
 import { DayInfoModal } from "@/components/day-info-modal"
 import { ShareSync } from "@/components/share-sync"
+import { hashPassword } from "@/lib/share"
+import type { ShareLog } from "@/lib/share"
 import { updateShare } from "@/lib/share"
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
@@ -60,11 +62,34 @@ export default function TripDetailPage() {
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
   const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [shareLogs, setShareLogs] = useState<ShareLog[]>([])
+  const [shareName, setShareName] = useState("")
+  const [shareNameOpen, setShareNameOpen] = useState(false)
+  const [sharePassword, setSharePassword] = useState("")
+  const [sharePasswordOpen, setSharePasswordOpen] = useState(false)
+  const [sharePasswordHash, setSharePasswordHash] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!activeShare) return
     setShareEnabled(activeShare.enabled)
   }, [activeShare?.enabled])
+
+  useEffect(() => {
+    if (!effectiveShareId) return
+    const nameKey = `trav-share-name:${effectiveShareId}`
+    const passKey = `trav-share-pass:${effectiveShareId}`
+    const storedName = localStorage.getItem(nameKey)
+    const storedPass = localStorage.getItem(passKey)
+    if (!storedName) {
+      setShareNameOpen(true)
+    } else {
+      setShareName(storedName)
+    }
+    if (storedPass) {
+      setSharePasswordHash(storedPass)
+    }
+  }, [effectiveShareId])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -89,6 +114,21 @@ export default function TripDetailPage() {
       console.error("Manual share update failed", error)
       setSyncError("업로드 실패")
     }
+  }
+
+  const handleSubmitShareName = () => {
+    if (!effectiveShareId || !shareName.trim()) return
+    localStorage.setItem(`trav-share-name:${effectiveShareId}`, shareName.trim())
+    setShareNameOpen(false)
+  }
+
+  const handleSubmitPassword = async () => {
+    if (!effectiveShareId || !sharePassword.trim()) return
+    const hash = await hashPassword(sharePassword.trim())
+    setSharePasswordHash(hash)
+    localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
+    setPasswordError(null)
+    setSharePasswordOpen(false)
   }
 
   if (!trip && effectiveShareId) {
@@ -265,6 +305,27 @@ export default function TripDetailPage() {
               >
                 지금 동기화
               </button>
+            </div>
+          )}
+          {effectiveShareId && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs">
+              <div className="text-xs font-semibold text-slate-600 mb-2">공유 로그</div>
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                {shareLogs.length === 0 ? (
+                  <div className="text-[11px] text-slate-400">아직 기록이 없습니다</div>
+                ) : (
+                  shareLogs
+                    .slice()
+                    .sort((a, b) => (b.clientTs ?? 0) - (a.clientTs ?? 0))
+                    .slice(0, 8)
+                    .map((log) => (
+                      <div key={log.id} className="text-[11px] text-slate-600">
+                        <span className="font-semibold text-slate-800">{log.user}</span>{" "}
+                        <span>{log.action}</span>
+                      </div>
+                    ))
+                )}
+              </div>
             </div>
           )}
         </aside>
@@ -480,7 +541,68 @@ export default function TripDetailPage() {
             onStatusChange={setShareEnabled}
             onSync={handleSync}
             onError={setSyncError}
+            onLogsChange={setShareLogs}
+            onAuthRequired={(required) => {
+              if (!required) {
+                setSharePasswordOpen(false)
+                setPasswordError(null)
+                return
+              }
+              setSharePasswordOpen(true)
+              setPasswordError(sharePasswordHash ? "비밀번호가 올바르지 않습니다" : "비밀번호가 필요합니다")
+            }}
+            localPasswordHash={sharePasswordHash}
+            actorName={shareName || "익명"}
           />
+        )}
+
+        {shareNameOpen && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" />
+            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+              <div className="text-lg font-bold text-slate-900">이름 입력</div>
+              <p className="mt-2 text-sm text-slate-500">공유 로그에 표시될 이름을 입력해 주세요.</p>
+              <input
+                type="text"
+                value={shareName}
+                onChange={(event) => setShareName(event.target.value)}
+                placeholder="이름"
+                className="mt-4 w-full rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              />
+              <button
+                type="button"
+                onClick={handleSubmitShareName}
+                className="mt-5 w-full rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        )}
+
+        {sharePasswordOpen && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" />
+            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+              <div className="text-lg font-bold text-slate-900">비밀번호 입력</div>
+              <p className="mt-2 text-sm text-slate-500">공유 링크에 설정된 비밀번호를 입력해 주세요.</p>
+              <input
+                type="password"
+                value={sharePassword}
+                onChange={(event) => setSharePassword(event.target.value)}
+                placeholder="비밀번호"
+                className="mt-4 w-full rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              />
+              {passwordError && <div className="mt-2 text-xs font-semibold text-red-500">{passwordError}</div>}
+              <button
+                type="button"
+                onClick={handleSubmitPassword}
+                className="mt-5 w-full rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
+              >
+                확인
+              </button>
+            </div>
+          </div>
         )}
       </div>
   )
