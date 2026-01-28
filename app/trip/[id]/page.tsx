@@ -10,6 +10,7 @@ import { ConfirmModal } from "@/components/confirm-modal"
 import { TripModal } from "@/components/trip-modal"
 import { DayInfoModal } from "@/components/day-info-modal"
 import { ShareSync } from "@/components/share-sync"
+import { updateShare } from "@/lib/share"
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import type { Schedule, ScheduleFormData, TripFormData } from "@/lib/types"
@@ -29,6 +30,7 @@ export default function TripDetailPage() {
     deleteTrip,
     getTripDays,
     updateDayInfo,
+    exportTripData,
     activeShares,
   } = useTravelStore()
   
@@ -57,6 +59,7 @@ export default function TripDetailPage() {
   const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
   const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!activeShare) return
@@ -66,12 +69,27 @@ export default function TripDetailPage() {
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
     setLastSyncDirection(direction)
+    setSyncError(null)
   }
 
   const formatSyncTime = (value: Date | null) =>
     value
       ? value.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
       : ""
+
+  const handleManualSync = async () => {
+    if (!effectiveShareId) return
+    const payload = exportTripData(id)
+    if (!payload) return
+    setSyncError(null)
+    try {
+      await updateShare(effectiveShareId, payload)
+      handleSync("push")
+    } catch (error) {
+      console.error("Manual share update failed", error)
+      setSyncError("업로드 실패")
+    }
+  }
 
   if (!trip && effectiveShareId) {
     return (
@@ -239,6 +257,14 @@ export default function TripDetailPage() {
               <div className="mt-1 text-[11px] text-slate-400 break-all">
                 ID: {effectiveShareId}
               </div>
+              {syncError && <div className="mt-2 text-[11px] font-semibold text-red-500">{syncError}</div>}
+              <button
+                type="button"
+                onClick={handleManualSync}
+                className="mt-2 w-full rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-emerald-700"
+              >
+                지금 동기화
+              </button>
             </div>
           )}
         </aside>
@@ -453,6 +479,7 @@ export default function TripDetailPage() {
             tripId={trip.id}
             onStatusChange={setShareEnabled}
             onSync={handleSync}
+            onError={setSyncError}
           />
         )}
       </div>

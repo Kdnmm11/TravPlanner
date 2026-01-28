@@ -9,11 +9,13 @@ export function ShareSync({
   tripId,
   onStatusChange,
   onSync,
+  onError,
 }: {
   shareId: string
   tripId: string
   onStatusChange?: (enabled: boolean) => void
   onSync?: (direction: "push" | "pull") => void
+  onError?: (message: string) => void
 }) {
   const exportTripData = useTravelStore((state) => state.exportTripData)
   const replaceTripData = useTravelStore((state) => state.replaceTripData)
@@ -52,8 +54,11 @@ export function ShareSync({
             .then(() => {
               onSync?.("push")
             })
-            .catch(() => undefined)
-        }, 400)
+            .catch((error) => {
+              console.error("Share update failed", error)
+              onError?.("업로드 실패")
+            })
+        }, 100)
       }
     )
     return () => {
