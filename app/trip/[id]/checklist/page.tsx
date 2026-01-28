@@ -50,11 +50,23 @@ export default function TripChecklistPage() {
   const activeShare = activeShares[id]
   const effectiveShareId = shareId ?? activeShare?.shareId ?? null
   const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
+  const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
 
   useEffect(() => {
     if (!activeShare) return
     setShareEnabled(activeShare.enabled)
   }, [activeShare?.enabled])
+
+  const handleSync = (direction: "push" | "pull") => {
+    setLastSyncAt(new Date())
+    setLastSyncDirection(direction)
+  }
+
+  const formatSyncTime = (value: Date | null) =>
+    value
+      ? value.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      : ""
 
   const trip = trips.find((item) => item.id === id)
   const categories = useMemo(
@@ -161,7 +173,12 @@ export default function TripChecklistPage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync shareId={effectiveShareId} tripId={id} onStatusChange={setShareEnabled} />
+          <ShareSync
+            shareId={effectiveShareId}
+            tripId={id}
+            onStatusChange={setShareEnabled}
+            onSync={handleSync}
+          />
         </div>
       </div>
     )
@@ -233,6 +250,24 @@ export default function TripChecklistPage() {
               </Link>
             </div>
           </nav>
+          {effectiveShareId && (
+            <div className="mt-6 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-emerald-700">공유 상태</span>
+                <span className={shareEnabled ? "text-emerald-600" : "text-slate-400"}>
+                  {shareEnabled ? "켜짐" : "꺼짐"}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                {lastSyncAt
+                  ? `마지막 동기화 ${formatSyncTime(lastSyncAt)} (${lastSyncDirection === "push" ? "보냄" : "받음"})`
+                  : "동기화 대기 중"}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-400 break-all">
+                ID: {effectiveShareId}
+              </div>
+            </div>
+          )}
         </aside>
 
         <main className="flex flex-col min-h-screen">
@@ -778,7 +813,12 @@ export default function TripChecklistPage() {
       )}
 
       {effectiveShareId && (
-        <ShareSync shareId={effectiveShareId} tripId={trip.id} onStatusChange={setShareEnabled} />
+        <ShareSync
+          shareId={effectiveShareId}
+          tripId={trip.id}
+          onStatusChange={setShareEnabled}
+          onSync={handleSync}
+        />
       )}
     </div>
   )

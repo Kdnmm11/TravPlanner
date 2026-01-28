@@ -790,7 +790,10 @@ export const useTravelStore = create<TravelStore>()(
         if (migrated) return migrated
         const state = persistedState as any
         if (!state?.exchangeRates || state.exchangeRates.length === 0) {
-          return { ...state, exchangeRates: defaultExchangeRates }
+          return { ...state, exchangeRates: defaultExchangeRates, activeShares: state.activeShares ?? {} }
+        }
+        if (!state?.activeShares) {
+          return { ...state, activeShares: {} }
         }
         return state
       },
@@ -802,6 +805,7 @@ export const useTravelStore = create<TravelStore>()(
         checklistCategories: state.checklistCategories,
         checklistItems: state.checklistItems,
         selectedTripId: state.selectedTripId,
+        activeShares: state.activeShares,
       }),
     }
   )

@@ -8,10 +8,12 @@ export function ShareSync({
   shareId,
   tripId,
   onStatusChange,
+  onSync,
 }: {
   shareId: string
   tripId: string
   onStatusChange?: (enabled: boolean) => void
+  onSync?: (direction: "push" | "pull") => void
 }) {
   const exportTripData = useTravelStore((state) => state.exportTripData)
   const replaceTripData = useTravelStore((state) => state.replaceTripData)
@@ -27,6 +29,7 @@ export function ShareSync({
       if (!enabled || !payload) return
       applyRemoteRef.current = true
       replaceTripData(payload)
+      onSync?.("pull")
       window.setTimeout(() => {
         applyRemoteRef.current = false
       }, 0)
@@ -46,6 +49,10 @@ export function ShareSync({
         if (debounceRef.current) window.clearTimeout(debounceRef.current)
         debounceRef.current = window.setTimeout(() => {
           updateShare(shareId, payload)
+            .then(() => {
+              onSync?.("push")
+            })
+            .catch(() => undefined)
         }, 400)
       }
     )
