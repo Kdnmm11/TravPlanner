@@ -55,7 +55,7 @@ export function DayColumn({
 
 
   return (
-    <div className="flex-shrink-0 w-80 flex flex-col">
+    <div className="flex flex-col flex-shrink-0 min-w-[320px] max-w-[320px]" style={{ flex: "0 0 320px" }}>
       {/* Day Header */}
       <div className="bg-white rounded-t-xl p-4 border border-slate-200 border-b-0">
         <div className="flex items-center justify-between">
@@ -70,7 +70,7 @@ export function DayColumn({
       </div>
 
       {/* Schedules */}
-      <div className="flex-1 bg-slate-50/70 p-4 overflow-y-auto border-x border-slate-200">
+      <div className="flex-1 min-h-[520px] bg-slate-50/70 p-4 overflow-y-auto border-x border-slate-200">
         {schedules.map((schedule) => (
           <div
             key={schedule.id}

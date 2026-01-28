@@ -68,6 +68,7 @@ export function ScheduleCard({
   const categoryFont = 12 * categoryScale
   const detailFont = 14 * textScale
   const expandedMaxHeight = 128 + heightOffset
+  const baseMinHeight = 68 + heightOffset
 
   useEffect(() => {
     if (!expanded || !cardRef.current) return
@@ -82,6 +83,8 @@ export function ScheduleCard({
       style={{
         paddingTop: basePaddingY + heightOffset / 2,
         paddingBottom: basePaddingY + heightOffset / 2,
+        minHeight: baseMinHeight,
+        height: expanded ? "auto" : baseMinHeight,
       }}
     >
       <div className="flex items-center gap-2">

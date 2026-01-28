@@ -41,26 +41,23 @@ export function ShareSync({
 
   useEffect(() => {
     if (!shareId || !tripId) return
-    const unsubscribe = useTravelStore.subscribe(
-      (state) => state,
-      () => {
-        if (applyRemoteRef.current) return
-        if (!shareEnabledRef.current) return
-        const payload = exportTripData(tripId)
-        if (!payload) return
-        if (debounceRef.current) window.clearTimeout(debounceRef.current)
-        debounceRef.current = window.setTimeout(() => {
-          updateShare(shareId, payload)
-            .then(() => {
-              onSync?.("push")
-            })
-            .catch((error) => {
-              console.error("Share update failed", error)
-              onError?.("업로드 실패")
-            })
-        }, 100)
-      }
-    )
+    const unsubscribe = useTravelStore.subscribe(() => {
+      if (applyRemoteRef.current) return
+      if (!shareEnabledRef.current) return
+      const payload = exportTripData(tripId)
+      if (!payload) return
+      if (debounceRef.current) window.clearTimeout(debounceRef.current)
+      debounceRef.current = window.setTimeout(() => {
+        updateShare(shareId, payload)
+          .then(() => {
+            onSync?.("push")
+          })
+          .catch((error) => {
+            console.error("Share update failed", error)
+            onError?.("업로드 실패")
+          })
+      }, 100)
+    })
     return () => {
       unsubscribe()
       if (debounceRef.current) {
