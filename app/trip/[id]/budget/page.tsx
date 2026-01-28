@@ -8,7 +8,7 @@ import { useTravelStore } from "@/lib/store"
 import { BudgetAddModal } from "@/components/budget-add-modal"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
-import { banShareMember, hashPassword, updateShare } from "@/lib/share"
+import { banShareMember, hashPassword, setSharePassword, updateShare } from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
 import type { Schedule } from "@/lib/types"
 
@@ -135,6 +135,11 @@ export default function TripBudgetPage() {
   const [sharePasswordOpen, setSharePasswordOpen] = useState(false)
   const [sharePasswordHash, setSharePasswordHash] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [shareSettingsOpen, setShareSettingsOpen] = useState(false)
+  const [sharePasswordNext, setSharePasswordNext] = useState("")
+  const [sharePasswordEnabled, setSharePasswordEnabled] = useState(false)
+  const [shareSettingsError, setShareSettingsError] = useState<string | null>(null)
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const isAdmin = Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
 
   useEffect(() => {
@@ -231,6 +236,58 @@ export default function TripBudgetPage() {
     setPasswordError(null)
     setSharePasswordOpen(false)
   }
+
+  const getShareBaseUrl = () => {
+    const envUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL
+    if (envUrl) {
+      return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`
+    }
+    return window.location.origin
+  }
+
+  const handleCopyShareLink = async () => {
+    if (!effectiveShareId) return
+    const link = `${getShareBaseUrl()}/trip/${id}?share=${effectiveShareId}`
+    try {
+      await navigator.clipboard.writeText(link)
+      setShareLinkCopied(true)
+      window.setTimeout(() => setShareLinkCopied(false), 1500)
+    } catch {
+      setShareSettingsError("복사에 실패했습니다")
+    }
+  }
+
+  const handleSaveShareSettings = async () => {
+    if (!effectiveShareId || !isAdmin) return
+    setShareSettingsError(null)
+    if (!sharePasswordEnabled) {
+      await setSharePassword(effectiveShareId, null)
+      localStorage.removeItem(`trav-share-pass:${effectiveShareId}`)
+      setSharePasswordHash(null)
+      setShareSettingsOpen(false)
+      return
+    }
+    if (!sharePasswordNext.trim()) {
+      setShareSettingsError("비밀번호를 입력해 주세요.")
+      return
+    }
+    const hash = await hashPassword(sharePasswordNext.trim())
+    await setSharePassword(effectiveShareId, hash)
+    localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
+    setSharePasswordHash(hash)
+    setShareSettingsOpen(false)
+  }
+
+  useEffect(() => {
+    if (!shareSettingsOpen) return
+    setSharePasswordNext("")
+    setSharePasswordEnabled(Boolean(sharePasswordHash))
+    setShareSettingsError(null)
+    setShareLinkCopied(false)
+  }, [shareSettingsOpen, sharePasswordHash])
 
   const handleBanMember = async (memberId: string) => {
     if (!effectiveShareId) return
@@ -453,6 +510,13 @@ export default function TripBudgetPage() {
                 className="mt-2 w-full rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-emerald-700"
               >
                 지금 동기화
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareSettingsOpen(true)}
+                className="mt-2 w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600"
+              >
+                공유 설정
               </button>
             </div>
           )}
@@ -879,12 +943,80 @@ export default function TripBudgetPage() {
         />
       )}
 
-      <ShareChatModal
-        isOpen={chatOpen}
-        shareId={effectiveShareId}
-        userName={shareName || (isAdmin ? "admin" : "익명")}
-        onClose={() => setChatOpen(false)}
-      />
+        <ShareChatModal
+          isOpen={chatOpen}
+          shareId={effectiveShareId}
+          userName={shareName || (isAdmin ? "admin" : "익명")}
+          onClose={() => setChatOpen(false)}
+        />
+
+        {shareSettingsOpen && effectiveShareId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-bold text-slate-900">공유 설정</div>
+                <button
+                  type="button"
+                  onClick={() => setShareSettingsOpen(false)}
+                  className="text-xs font-semibold text-slate-400 hover:text-slate-600"
+                >
+                  닫기
+                </button>
+              </div>
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-slate-600">공유 링크</div>
+                <div className="mt-2 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 break-all">
+                  {`${getShareBaseUrl()}/trip/${id}?share=${effectiveShareId}`}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="mt-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                >
+                  {shareLinkCopied ? "복사되었습니다" : "링크 복사"}
+                </button>
+              </div>
+              <div className="mt-4">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="accent-emerald-500"
+                    checked={sharePasswordEnabled}
+                    onChange={(event) => setSharePasswordEnabled(event.target.checked)}
+                    disabled={!isAdmin}
+                  />
+                  비밀번호 사용
+                </label>
+                {sharePasswordEnabled && (
+                  <input
+                    type="password"
+                    value={sharePasswordNext}
+                    onChange={(event) => setSharePasswordNext(event.target.value)}
+                    placeholder="새 비밀번호 입력"
+                    className="mt-2 w-full rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    disabled={!isAdmin}
+                  />
+                )}
+                {shareSettingsError && (
+                  <div className="mt-2 text-xs font-semibold text-red-500">{shareSettingsError}</div>
+                )}
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setShareSettingsOpen(false)}>
+                  닫기
+                </Button>
+                <Button size="sm" onClick={handleSaveShareSettings} disabled={!isAdmin}>
+                  저장
+                </Button>
+              </div>
+              {!isAdmin && (
+                <div className="mt-2 text-[11px] text-slate-400">
+                  관리자는 공유 링크와 비밀번호를 수정할 수 있어요.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       {accessDenied && (
         <div className="fixed inset-0 z-50">

@@ -138,6 +138,17 @@ export async function setShareEnabled(shareId: string, enabled: boolean) {
   )
 }
 
+export async function setSharePassword(shareId: string, passwordHash: string | null) {
+  await setDoc(
+    doc(db, "shares", shareId),
+    {
+      passwordHash: passwordHash || null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  )
+}
+
 export function subscribeShare(
   shareId: string,
   onData: (data: {
