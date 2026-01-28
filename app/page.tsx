@@ -184,6 +184,7 @@ export default function HomePage() {
       setShareDocId(shareId)
       setShareEnabledState(true)
       setActiveShare(trip.id, shareId, true)
+      localStorage.setItem(`trav-share-owner:${shareId}`, ownerId)
       if (passwordHash) {
         localStorage.setItem(`trav-share-pass:${shareId}`, passwordHash)
       }

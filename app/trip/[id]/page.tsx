@@ -86,8 +86,16 @@ export default function TripDetailPage() {
     if (!effectiveShareId) return
     const nameKey = `trav-share-name:${effectiveShareId}`
     const passKey = `trav-share-pass:${effectiveShareId}`
+    const ownerKey = `trav-share-owner:${effectiveShareId}`
     const storedName = localStorage.getItem(nameKey)
     const storedPass = localStorage.getItem(passKey)
+    const ownerId = localStorage.getItem(ownerKey)
+    const localClient = localStorage.getItem("trav-client-id")
+    if (ownerId && localClient && ownerId === localClient) {
+      setShareName("admin")
+      setShareNameOpen(false)
+      return
+    }
     if (!storedName) {
       setShareNameOpen(true)
     } else {
