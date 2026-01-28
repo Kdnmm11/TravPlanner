@@ -99,7 +99,7 @@ export default function TripTimeTablePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const shareId = searchParams.get("share")
-  const { trips, schedules, dayInfos, addSchedule, updateSchedule } = useTravelStore()
+  const { trips, schedules, dayInfos, addSchedule, updateSchedule, activeShares } = useTravelStore()
   const trip = trips.find((item) => item.id === id)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -126,7 +126,14 @@ export default function TripTimeTablePage() {
     endMinutes: number
     offsetY: number
   } | null>(null)
-  const [shareEnabled, setShareEnabled] = useState(true)
+  const activeShare = activeShares[id]
+  const effectiveShareId = shareId ?? activeShare?.shareId ?? null
+  const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
+
+  useEffect(() => {
+    if (!activeShare) return
+    setShareEnabled(activeShare.enabled)
+  }, [activeShare?.enabled])
   const tableHeight = 740
   const dragMovedRef = useRef(false)
   const [showRightFade, setShowRightFade] = useState(false)
@@ -345,7 +352,7 @@ export default function TripTimeTablePage() {
     scrollRef.current.scrollBy({ left: columnWidth, behavior: "smooth" })
   }
 
-  if (!trip && shareId) {
+  if (!trip && effectiveShareId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
@@ -355,7 +362,7 @@ export default function TripTimeTablePage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+          <ShareSync shareId={effectiveShareId} tripId={id} onStatusChange={setShareEnabled} />
         </div>
       </div>
     )
@@ -685,7 +692,9 @@ export default function TripTimeTablePage() {
         initialData={initialSchedule}
       />
 
-      {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
+      {effectiveShareId && (
+        <ShareSync shareId={effectiveShareId} tripId={trip.id} onStatusChange={setShareEnabled} />
+      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ export default function TripChecklistPage() {
     updateChecklistItemCount,
     updateChecklistItem,
     addChecklistPreset,
+    activeShares,
   } = useTravelStore()
 
   const [itemAddOpen, setItemAddOpen] = useState(false)
@@ -46,7 +47,14 @@ export default function TripChecklistPage() {
   const [editCategoryId, setEditCategoryId] = useState<string>("")
   const [editCountable, setEditCountable] = useState(false)
   const [editTarget, setEditTarget] = useState(1)
-  const [shareEnabled, setShareEnabled] = useState(true)
+  const activeShare = activeShares[id]
+  const effectiveShareId = shareId ?? activeShare?.shareId ?? null
+  const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
+
+  useEffect(() => {
+    if (!activeShare) return
+    setShareEnabled(activeShare.enabled)
+  }, [activeShare?.enabled])
 
   const trip = trips.find((item) => item.id === id)
   const categories = useMemo(
@@ -143,7 +151,7 @@ export default function TripChecklistPage() {
     setEditCategoryPickerOpen(false)
   }
 
-  if (!trip && shareId) {
+  if (!trip && effectiveShareId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
@@ -153,7 +161,7 @@ export default function TripChecklistPage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+          <ShareSync shareId={effectiveShareId} tripId={id} onStatusChange={setShareEnabled} />
         </div>
       </div>
     )
@@ -769,7 +777,9 @@ export default function TripChecklistPage() {
         </div>
       )}
 
-      {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
+      {effectiveShareId && (
+        <ShareSync shareId={effectiveShareId} tripId={trip.id} onStatusChange={setShareEnabled} />
+      )}
     </div>
   )
 }

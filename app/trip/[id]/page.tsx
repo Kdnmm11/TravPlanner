@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Search, MoreHorizontal, Edit2, Trash2, Plane } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
@@ -29,6 +29,7 @@ export default function TripDetailPage() {
     deleteTrip,
     getTripDays,
     updateDayInfo,
+    activeShares,
   } = useTravelStore()
   
   const trip = trips.find((t) => t.id === id)
@@ -51,9 +52,16 @@ export default function TripDetailPage() {
   const [tripMenuOpen, setTripMenuOpen] = useState(false)
   const [tripModalOpen, setTripModalOpen] = useState(false)
   const [deleteTripModalOpen, setDeleteTripModalOpen] = useState(false)
-  const [shareEnabled, setShareEnabled] = useState(true)
+  const activeShare = activeShares[id]
+  const effectiveShareId = shareId ?? activeShare?.shareId ?? null
+  const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
 
-  if (!trip && shareId) {
+  useEffect(() => {
+    if (!activeShare) return
+    setShareEnabled(activeShare.enabled)
+  }, [activeShare?.enabled])
+
+  if (!trip && effectiveShareId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
@@ -63,7 +71,7 @@ export default function TripDetailPage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+          <ShareSync shareId={effectiveShareId} tripId={id} onStatusChange={setShareEnabled} />
         </div>
       </div>
     )
@@ -404,7 +412,9 @@ export default function TripDetailPage() {
           message="이 여행을 삭제하시겠습니까? 모든 일정이 함께 삭제됩니다."
         />
 
-        {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
+        {effectiveShareId && (
+          <ShareSync shareId={effectiveShareId} tripId={trip.id} onStatusChange={setShareEnabled} />
+        )}
       </div>
   )
 }

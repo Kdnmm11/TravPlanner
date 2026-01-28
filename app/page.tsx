@@ -11,7 +11,17 @@ import Link from "next/link"
 import type { Trip, TripFormData } from "@/lib/types"
 
 export default function HomePage() {
-  const { trips, addTrip, updateTrip, deleteTrip, importTripData, exportTripData } = useTravelStore()
+  const {
+    trips,
+    addTrip,
+    updateTrip,
+    deleteTrip,
+    importTripData,
+    exportTripData,
+    activeShares,
+    setActiveShare,
+    setActiveShareEnabled,
+  } = useTravelStore()
   
   const [tripModalOpen, setTripModalOpen] = useState(false)
   const [tripModalMode, setTripModalMode] = useState<"add" | "edit">("add")
@@ -110,6 +120,17 @@ export default function HomePage() {
     return diffDays
   }
 
+  const getShareBaseUrl = () => {
+    const envUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL
+    if (envUrl) {
+      return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`
+    }
+    return window.location.origin
+  }
+
   const handleImport = async (file: File) => {
     try {
       const text = await file.text()
@@ -134,19 +155,11 @@ export default function HomePage() {
           window.setTimeout(() => reject(new Error("timeout")), 10000)
         ),
       ])
-      const envUrl =
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        process.env.NEXT_PUBLIC_VERCEL_URL
-      const baseUrl = envUrl
-        ? envUrl.startsWith("http")
-          ? envUrl
-          : `https://${envUrl}`
-        : window.location.origin
-      const link = `${baseUrl}/trip/${trip.id}?share=${shareId}`
+      const link = `${getShareBaseUrl()}/trip/${trip.id}?share=${shareId}`
       setShareLink(link)
       setShareDocId(shareId)
       setShareEnabledState(true)
+      setActiveShare(trip.id, shareId, true)
     } catch (error) {
       console.error("Share link creation failed", error)
       setShareError("링크 생성에 실패했습니다. Firestore가 활성화되어 있는지 확인해 주세요.")
@@ -183,12 +196,24 @@ export default function HomePage() {
     setShareEnabledState(next)
     try {
       await setShareEnabled(shareDocId, next)
+      if (selectedShareTripId) {
+        setActiveShareEnabled(selectedShareTripId, next)
+      }
     } catch (error) {
       console.error("Share enabled update failed", error)
       setShareEnabledState(!next)
       setShareError("공유 상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.")
     }
   }
+
+  useEffect(() => {
+    if (!selectedShareTripId) return
+    const active = activeShares[selectedShareTripId]
+    if (!active) return
+    setShareDocId(active.shareId)
+    setShareEnabledState(active.enabled)
+    setShareLink(`${getShareBaseUrl()}/trip/${selectedShareTripId}?share=${active.shareId}`)
+  }, [selectedShareTripId, activeShares])
 
   const handleCopyShareLink = async () => {
     if (!shareLink) return

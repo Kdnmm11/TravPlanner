@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { Plane, Search, Plus } from "lucide-react"
@@ -66,7 +66,7 @@ export default function TripBudgetPage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const shareId = searchParams.get("share")
-  const { trips, schedules, exchangeRates, setExchangeRate, updateSchedule, addBudgetItem } = useTravelStore()
+  const { trips, schedules, exchangeRates, setExchangeRate, updateSchedule, addBudgetItem, activeShares } = useTravelStore()
 
   const trip = trips.find((item) => item.id === id)
   const tripSchedules = schedules
@@ -103,7 +103,14 @@ export default function TripBudgetPage() {
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
-  const [shareEnabled, setShareEnabled] = useState(true)
+  const activeShare = activeShares[id]
+  const effectiveShareId = shareId ?? activeShare?.shareId ?? null
+  const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
+
+  useEffect(() => {
+    if (!activeShare) return
+    setShareEnabled(activeShare.enabled)
+  }, [activeShare?.enabled])
 
   const totalExpense = tripSchedules.reduce((sum, schedule) => {
     const rate = rateMap[schedule.currency] ?? 1
@@ -134,7 +141,7 @@ export default function TripBudgetPage() {
     return `${start.getFullYear()}년 ${start.getMonth() + 1}월 ${start.getDate()}일 - ${end.getMonth() + 1}월 ${end.getDate()}일`
   }
 
-  if (!trip && shareId) {
+  if (!trip && effectiveShareId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
@@ -144,7 +151,7 @@ export default function TripBudgetPage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+          <ShareSync shareId={effectiveShareId} tripId={id} onStatusChange={setShareEnabled} />
         </div>
       </div>
     )
@@ -551,7 +558,9 @@ export default function TripBudgetPage() {
         }}
       />
 
-      {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
+      {effectiveShareId && (
+        <ShareSync shareId={effectiveShareId} tripId={trip.id} onStatusChange={setShareEnabled} />
+      )}
     </div>
   )
 }

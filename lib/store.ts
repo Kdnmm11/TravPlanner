@@ -23,12 +23,16 @@ interface TravelStore {
   checklistCategories: ChecklistCategory[]
   checklistItems: ChecklistItem[]
   selectedTripId: string | null
+  activeShares: Record<string, { shareId: string; enabled: boolean }>
 
   // Trip actions
   addTrip: (trip: TripFormData) => void
   updateTrip: (id: string, updates: Partial<Trip>) => void
   deleteTrip: (id: string) => void
   selectTrip: (id: string | null) => void
+  setActiveShare: (tripId: string, shareId: string, enabled: boolean) => void
+  setActiveShareEnabled: (tripId: string, enabled: boolean) => void
+  clearActiveShare: (tripId: string) => void
 
   // Schedule actions
   addSchedule: (tripId: string, dayNumber: number, schedule: ScheduleFormData) => void
@@ -227,6 +231,7 @@ export const useTravelStore = create<TravelStore>()(
       checklistCategories: [],
       checklistItems: [],
       selectedTripId: null,
+      activeShares: {},
 
       addTrip: (tripData) =>
         set((state) => {
@@ -271,6 +276,31 @@ export const useTravelStore = create<TravelStore>()(
         }),
 
       selectTrip: (id) => set({ selectedTripId: id }),
+      setActiveShare: (tripId, shareId, enabled) =>
+        set((state) => ({
+          activeShares: {
+            ...state.activeShares,
+            [tripId]: { shareId, enabled },
+          },
+        })),
+      setActiveShareEnabled: (tripId, enabled) =>
+        set((state) => ({
+          activeShares: state.activeShares[tripId]
+            ? {
+                ...state.activeShares,
+                [tripId]: {
+                  ...state.activeShares[tripId],
+                  enabled,
+                },
+              }
+            : state.activeShares,
+        })),
+      clearActiveShare: (tripId) =>
+        set((state) => {
+          const next = { ...state.activeShares }
+          delete next[tripId]
+          return { activeShares: next }
+        }),
 
       addSchedule: (tripId, dayNumber, schedule) =>
         set((state) => ({
