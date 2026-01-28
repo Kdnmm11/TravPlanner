@@ -7,8 +7,9 @@ import { Plane, Search, Plus } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import { BudgetAddModal } from "@/components/budget-add-modal"
 import { ShareSync } from "@/components/share-sync"
-import { hashPassword, updateShare } from "@/lib/share"
-import type { ShareLog } from "@/lib/share"
+import { ShareChatModal } from "@/components/share-chat-modal"
+import { banShareMember, hashPassword, updateShare } from "@/lib/share"
+import type { ShareLog, ShareMember } from "@/lib/share"
 import type { Schedule } from "@/lib/types"
 
 const currencyCatalog = [
@@ -121,6 +122,11 @@ export default function TripBudgetPage() {
   const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [shareLogs, setShareLogs] = useState<ShareLog[]>([])
+  const [shareMembers, setShareMembers] = useState<ShareMember[]>([])
+  const [shareOwnerId, setShareOwnerId] = useState<string | null>(null)
+  const [accessDenied, setAccessDenied] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [clientId, setClientId] = useState<string | null>(null)
   const [shareName, setShareName] = useState("")
   const [shareNameOpen, setShareNameOpen] = useState(false)
   const [sharePassword, setSharePassword] = useState("")
@@ -148,6 +154,25 @@ export default function TripBudgetPage() {
       setSharePasswordHash(storedPass)
     }
   }, [effectiveShareId])
+
+  useEffect(() => {
+    const existing = localStorage.getItem("trav-client-id")
+    if (existing) {
+      setClientId(existing)
+      return
+    }
+    const next = Math.random().toString(36).slice(2, 10)
+    localStorage.setItem("trav-client-id", next)
+    setClientId(next)
+  }, [])
+
+  useEffect(() => {
+    if (!clientId || !shareOwnerId) return
+    if (clientId === shareOwnerId) {
+      setShareName("admin")
+      setShareNameOpen(false)
+    }
+  }, [clientId, shareOwnerId])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -187,6 +212,13 @@ export default function TripBudgetPage() {
     localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
     setPasswordError(null)
     setSharePasswordOpen(false)
+  }
+
+  const isAdmin = Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
+
+  const handleBanMember = async (memberId: string) => {
+    if (!effectiveShareId) return
+    await banShareMember(effectiveShareId, memberId)
   }
 
   const totalExpense = tripSchedules.reduce((sum, schedule) => {
@@ -246,6 +278,13 @@ export default function TripBudgetPage() {
             }}
             localPasswordHash={sharePasswordHash}
             actorName={shareName || "익명"}
+            clientId={clientId}
+            actorRole={isAdmin ? "admin" : "member"}
+            onMembersChange={(members, ownerId) => {
+              setShareMembers(members)
+              setShareOwnerId(ownerId ?? null)
+            }}
+            onAccessDenied={(denied) => setAccessDenied(denied)}
           />
         </div>
 
@@ -395,6 +434,34 @@ export default function TripBudgetPage() {
           )}
           {effectiveShareId && (
             <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs">
+              <div className="text-xs font-semibold text-slate-600 mb-2">접속자</div>
+              <div className="space-y-2">
+                {shareMembers.length === 0 ? (
+                  <div className="text-[11px] text-slate-400">접속자 없음</div>
+                ) : (
+                  shareMembers.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between text-[11px] text-slate-600">
+                      <span>
+                        {member.name}
+                        {member.role === "admin" ? " (admin)" : ""}
+                      </span>
+                      {isAdmin && member.id !== clientId && (
+                        <button
+                          type="button"
+                          onClick={() => handleBanMember(member.id)}
+                          className="rounded-full border border-red-200 px-2 py-0.5 text-[10px] font-semibold text-red-500"
+                        >
+                          차단
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+          {effectiveShareId && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs">
               <div className="text-xs font-semibold text-slate-600 mb-2">공유 로그</div>
               <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                 {shareLogs.length === 0 ? (
@@ -413,6 +480,15 @@ export default function TripBudgetPage() {
                 )}
               </div>
             </div>
+          )}
+          {effectiveShareId && (
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              채팅 열기
+            </button>
           )}
         </aside>
 
@@ -768,9 +844,32 @@ export default function TripBudgetPage() {
           }}
           localPasswordHash={sharePasswordHash}
           actorName={shareName || "익명"}
+          clientId={clientId}
+          actorRole={isAdmin ? "admin" : "member"}
+          onMembersChange={(members, ownerId) => {
+            setShareMembers(members)
+            setShareOwnerId(ownerId ?? null)
+          }}
+          onAccessDenied={(denied) => setAccessDenied(denied)}
         />
       )}
 
+      <ShareChatModal
+        isOpen={chatOpen}
+        shareId={effectiveShareId}
+        userName={shareName || (isAdmin ? "admin" : "익명")}
+        onClose={() => setChatOpen(false)}
+      />
+
+      {accessDenied && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <div className="text-lg font-bold text-slate-900">접속이 차단되었습니다</div>
+            <p className="mt-2 text-sm text-slate-500">호스트가 접근을 차단했습니다.</p>
+          </div>
+        </div>
+      )}
       {shareNameOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" />

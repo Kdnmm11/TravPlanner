@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react"
 import { useTravelStore } from "@/lib/store"
-import { addShareLog, subscribeShare, updateShare } from "@/lib/share"
-import type { ShareLog, SharePayload } from "@/lib/share"
+import { addShareLog, subscribeShare, updateShare, upsertShareMember } from "@/lib/share"
+import type { ShareLog, ShareMember, SharePayload } from "@/lib/share"
 
 export function ShareSync({
   shareId,
@@ -15,6 +15,10 @@ export function ShareSync({
   onAuthRequired,
   onLogsChange,
   actorName,
+  clientId,
+  actorRole = "member",
+  onMembersChange,
+  onAccessDenied,
 }: {
   shareId: string
   tripId: string
@@ -25,6 +29,10 @@ export function ShareSync({
   onAuthRequired?: (required: boolean) => void
   onLogsChange?: (logs: ShareLog[]) => void
   actorName?: string
+  clientId?: string | null
+  actorRole?: "admin" | "member"
+  onMembersChange?: (members: ShareMember[], ownerId?: string | null) => void
+  onAccessDenied?: (denied: boolean) => void
 }) {
   const exportTripData = useTravelStore((state) => state.exportTripData)
   const replaceTripData = useTravelStore((state) => state.replaceTripData)
@@ -34,18 +42,23 @@ export function ShareSync({
   const passwordRequiredRef = useRef(false)
   const lastPayloadRef = useRef<SharePayload | null>(null)
   const lastLogRef = useRef<{ action: string; time: number } | null>(null)
+  const accessDeniedRef = useRef(false)
 
   useEffect(() => {
     if (!shareId) return
-    const unsubscribe = subscribeShare(shareId, ({ payload, enabled, passwordHash, logs }) => {
+    const unsubscribe = subscribeShare(shareId, ({ payload, enabled, passwordHash, logs, members, bans, ownerId }) => {
       shareEnabledRef.current = enabled
       onStatusChange?.(enabled)
       onLogsChange?.(logs ?? [])
+      onMembersChange?.(Object.values(members ?? {}), ownerId)
       const requiresPassword = Boolean(passwordHash)
       passwordRequiredRef.current = requiresPassword
       const authed = !requiresPassword || (localPasswordHash && localPasswordHash === passwordHash)
       onAuthRequired?.(!authed && requiresPassword)
-      if (!authed || !enabled || !payload) return
+      const denied = clientId ? (bans ?? []).includes(clientId) : false
+      accessDeniedRef.current = denied
+      onAccessDenied?.(denied)
+      if (denied || !authed || !enabled || !payload) return
       applyRemoteRef.current = true
       replaceTripData(payload)
       onSync?.("pull")
@@ -55,7 +68,18 @@ export function ShareSync({
       }, 0)
     })
     return () => unsubscribe()
-  }, [shareId, replaceTripData, onStatusChange, onSync, localPasswordHash, onAuthRequired, onLogsChange])
+  }, [
+    shareId,
+    replaceTripData,
+    onStatusChange,
+    onSync,
+    localPasswordHash,
+    onAuthRequired,
+    onLogsChange,
+    onMembersChange,
+    clientId,
+    onAccessDenied,
+  ])
 
   useEffect(() => {
     if (!shareId || !tripId) return
@@ -63,6 +87,7 @@ export function ShareSync({
       if (applyRemoteRef.current) return
       if (!shareEnabledRef.current) return
       if (passwordRequiredRef.current && !localPasswordHash) return
+      if (accessDeniedRef.current) return
       const payload = exportTripData(tripId)
       if (!payload) return
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
@@ -99,6 +124,20 @@ export function ShareSync({
       }
     }
   }, [shareId, tripId, exportTripData])
+
+  useEffect(() => {
+    if (!shareId || !clientId || !actorName) return
+    const member: ShareMember = {
+      id: clientId,
+      name: actorName,
+      role: actorRole,
+    }
+    upsertShareMember(shareId, member).catch(() => undefined)
+    const interval = window.setInterval(() => {
+      upsertShareMember(shareId, member).catch(() => undefined)
+    }, 15000)
+    return () => window.clearInterval(interval)
+  }, [shareId, clientId, actorName, actorRole])
 
   return null
 }

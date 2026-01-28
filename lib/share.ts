@@ -4,8 +4,11 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -21,6 +24,20 @@ export type ShareLog = {
   createdAt?: unknown
 }
 
+export type ShareMember = {
+  id: string
+  name: string
+  role: "admin" | "member"
+  lastSeen?: unknown
+}
+
+export type ShareMessage = {
+  id: string
+  user: string
+  text: string
+  createdAt?: unknown
+}
+
 export type SharePayload = {
   version: number
   trip: Trip
@@ -31,13 +48,30 @@ export type SharePayload = {
   exchangeRates: ExchangeRate[]
 }
 
-export async function createShare(payload: SharePayload, passwordHash?: string | null) {
+export async function createShare(
+  payload: SharePayload,
+  passwordHash?: string | null,
+  ownerId?: string,
+  ownerName?: string
+) {
   const ref = await addDoc(collection(db, "shares"), {
     payload,
     tripId: payload.trip.id,
     enabled: true,
     passwordHash: passwordHash || null,
     logs: [],
+    ownerId: ownerId || null,
+    members: ownerId
+      ? {
+          [ownerId]: {
+            id: ownerId,
+            name: ownerName || "admin",
+            role: "admin",
+            lastSeen: serverTimestamp(),
+          },
+        }
+      : {},
+    bans: [],
     updatedAt: serverTimestamp(),
   })
   return ref.id
@@ -62,6 +96,37 @@ export async function addShareLog(shareId: string, log: ShareLog) {
   })
 }
 
+export async function upsertShareMember(shareId: string, member: ShareMember) {
+  await setDoc(
+    doc(db, "shares", shareId),
+    {
+      members: {
+        [member.id]: {
+          ...member,
+          lastSeen: serverTimestamp(),
+        },
+      },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  )
+}
+
+export async function removeShareMember(shareId: string, memberId: string) {
+  await updateDoc(doc(db, "shares", shareId), {
+    [`members.${memberId}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function banShareMember(shareId: string, memberId: string) {
+  await updateDoc(doc(db, "shares", shareId), {
+    bans: arrayUnion(memberId),
+    [`members.${memberId}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export async function setShareEnabled(shareId: string, enabled: boolean) {
   await setDoc(
     doc(db, "shares", shareId),
@@ -80,6 +145,9 @@ export function subscribeShare(
     enabled: boolean
     passwordHash?: string | null
     logs?: ShareLog[]
+    members?: Record<string, ShareMember>
+    bans?: string[]
+    ownerId?: string | null
   }) => void
 ) {
   return onSnapshot(doc(db, "shares", shareId), (snapshot) => {
@@ -90,6 +158,9 @@ export function subscribeShare(
       enabled,
       passwordHash: data?.passwordHash ?? null,
       logs: (data?.logs as ShareLog[]) ?? [],
+      members: (data?.members as Record<string, ShareMember>) ?? {},
+      bans: (data?.bans as string[]) ?? [],
+      ownerId: data?.ownerId ?? null,
     })
   })
 }
@@ -99,4 +170,25 @@ export async function hashPassword(value: string) {
   const hashBuffer = await crypto.subtle.digest("SHA-256", encoded)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+export async function sendShareMessage(shareId: string, message: Omit<ShareMessage, "id">) {
+  await addDoc(collection(db, "shares", shareId, "messages"), {
+    ...message,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export function subscribeShareMessages(
+  shareId: string,
+  onData: (messages: ShareMessage[]) => void
+) {
+  const q = query(collection(db, "shares", shareId, "messages"), orderBy("createdAt", "asc"))
+  return onSnapshot(q, (snapshot) => {
+    const messages = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ShareMessage, "id">),
+    }))
+    onData(messages)
+  })
 }

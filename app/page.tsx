@@ -47,6 +47,7 @@ export default function HomePage() {
   const [shareCopied, setShareCopied] = useState(false)
   const [sharePasswordEnabled, setSharePasswordEnabled] = useState(false)
   const [sharePassword, setSharePassword] = useState("")
+  const [clientId, setClientId] = useState<string | null>(null)
   const sharePickerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -68,6 +69,17 @@ export default function HomePage() {
     setSharePasswordEnabled(false)
     setSharePassword("")
   }, [selectedShareTripId, shareModalOpen])
+
+  useEffect(() => {
+    const existing = localStorage.getItem("trav-client-id")
+    if (existing) {
+      setClientId(existing)
+      return
+    }
+    const next = Math.random().toString(36).slice(2, 10)
+    localStorage.setItem("trav-client-id", next)
+    setClientId(next)
+  }, [])
 
   useEffect(() => {
     if (!shareTripPickerOpen) return
@@ -157,7 +169,7 @@ export default function HomePage() {
         ? await hashPassword(sharePassword.trim())
         : null
       const shareId = await Promise.race([
-        createShare(payload, passwordHash),
+        createShare(payload, passwordHash, clientId ?? undefined, "admin"),
         new Promise<string>((_, reject) =>
           window.setTimeout(() => reject(new Error("timeout")), 10000)
         ),
