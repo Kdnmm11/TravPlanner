@@ -55,7 +55,11 @@ export function ShareSync({
       onMembersChange?.(Object.values(members ?? {}), ownerId)
       const requiresPassword = Boolean(passwordHash)
       passwordRequiredRef.current = requiresPassword
-      const authed = !requiresPassword || (localPasswordHash && localPasswordHash === passwordHash)
+      const isAdmin = actorRole === "admin"
+      const authed =
+        !requiresPassword ||
+        (localPasswordHash && localPasswordHash === passwordHash) ||
+        isAdmin
       onAuthRequired?.(!authed && requiresPassword)
       const denied = clientId ? (bans ?? []).includes(clientId) : false
       accessDeniedRef.current = denied
@@ -93,7 +97,7 @@ export function ShareSync({
     const unsubscribe = useTravelStore.subscribe(() => {
       if (applyRemoteRef.current) return
       if (!shareEnabledRef.current) return
-      if (passwordRequiredRef.current && !localPasswordHash) return
+      if (passwordRequiredRef.current && !localPasswordHash && actorRole !== "admin") return
       if (accessDeniedRef.current) return
       const payload = exportTripData(tripId)
       if (!payload) return

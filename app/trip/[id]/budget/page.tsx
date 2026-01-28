@@ -176,6 +176,13 @@ export default function TripBudgetPage() {
     }
   }, [clientId, shareOwnerId])
 
+  useEffect(() => {
+    if (!accessDenied) return
+    if (isAdmin) return
+    deleteTrip(id)
+    router.replace("/")
+  }, [accessDenied, isAdmin, deleteTrip, id, router])
+
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
     setLastSyncDirection(direction)
