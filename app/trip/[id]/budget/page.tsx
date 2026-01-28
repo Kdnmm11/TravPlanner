@@ -143,28 +143,31 @@ export default function TripBudgetPage() {
   }, [activeShare?.enabled])
 
   useEffect(() => {
-    if (!effectiveShareId) return
+    if (!effectiveShareId || !clientId) return
     const nameKey = `trav-share-name:${effectiveShareId}`
     const passKey = `trav-share-pass:${effectiveShareId}`
     const ownerKey = `trav-share-owner:${effectiveShareId}`
     const storedName = localStorage.getItem(nameKey)
     const storedPass = localStorage.getItem(passKey)
-    const ownerId = localStorage.getItem(ownerKey)
-    const localClient = localStorage.getItem("trav-client-id")
-    if (ownerId && localClient && ownerId === localClient) {
+    const storedOwner = localStorage.getItem(ownerKey)
+    const isOwnerByKey = Boolean(storedOwner && storedOwner === clientId)
+    const isOwnerByDoc = Boolean(shareOwnerId && shareOwnerId === clientId)
+    if (isOwnerByDoc) {
+      localStorage.setItem(ownerKey, clientId)
+    }
+    if (isOwnerByKey || isOwnerByDoc) {
       setShareName("admin")
       setShareNameOpen(false)
-      return
-    }
-    if (!storedName) {
-      setShareNameOpen(true)
-    } else {
+    } else if (storedName) {
       setShareName(storedName)
+      setShareNameOpen(false)
+    } else {
+      setShareNameOpen(true)
     }
     if (storedPass) {
       setSharePasswordHash(storedPass)
     }
-  }, [effectiveShareId])
+  }, [effectiveShareId, clientId, shareOwnerId])
 
   useEffect(() => {
     const existing = localStorage.getItem("trav-client-id")
@@ -176,14 +179,6 @@ export default function TripBudgetPage() {
     localStorage.setItem("trav-client-id", next)
     setClientId(next)
   }, [])
-
-  useEffect(() => {
-    if (!clientId || !shareOwnerId) return
-    if (clientId === shareOwnerId) {
-      setShareName("admin")
-      setShareNameOpen(false)
-    }
-  }, [clientId, shareOwnerId])
 
   useEffect(() => {
     if (!accessDenied) return
