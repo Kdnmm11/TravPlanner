@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { Plane, Plus, MoreHorizontal } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import { ShareSync } from "@/components/share-sync"
@@ -27,8 +27,10 @@ export default function TripChecklistPage() {
     updateChecklistItem,
     addChecklistPreset,
     exportTripData,
+    deleteTrip,
     activeShares,
   } = useTravelStore()
+  const router = useRouter()
 
   const [itemAddOpen, setItemAddOpen] = useState(false)
   const [categoryAddOpen, setCategoryAddOpen] = useState(false)
@@ -155,6 +157,13 @@ export default function TripChecklistPage() {
   const handleBanMember = async (memberId: string) => {
     if (!effectiveShareId) return
     await banShareMember(effectiveShareId, memberId)
+  }
+
+  const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
+    if (!disabled) return
+    if (clientId && ownerId && clientId === ownerId) return
+    deleteTrip(id)
+    router.replace("/")
   }
 
   const trip = trips.find((item) => item.id === id)
@@ -287,6 +296,7 @@ export default function TripChecklistPage() {
               setShareOwnerId(ownerId ?? null)
             }}
             onAccessDenied={(denied) => setAccessDenied(denied)}
+            onShareDisabled={handleShareDisabled}
           />
         </div>
 
@@ -1062,6 +1072,7 @@ export default function TripChecklistPage() {
             setShareOwnerId(ownerId ?? null)
           }}
           onAccessDenied={(denied) => setAccessDenied(denied)}
+          onShareDisabled={handleShareDisabled}
         />
       )}
 

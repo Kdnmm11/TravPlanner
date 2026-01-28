@@ -168,8 +168,13 @@ export default function HomePage() {
       const passwordHash = sharePasswordEnabled && sharePassword.trim()
         ? await hashPassword(sharePassword.trim())
         : null
+      const ownerId = clientId || localStorage.getItem("trav-client-id") || Math.random().toString(36).slice(2, 10)
+      if (!clientId) {
+        localStorage.setItem("trav-client-id", ownerId)
+        setClientId(ownerId)
+      }
       const shareId = await Promise.race([
-        createShare(payload, passwordHash, clientId ?? undefined, "admin"),
+        createShare(payload, passwordHash, ownerId, "admin"),
         new Promise<string>((_, reject) =>
           window.setTimeout(() => reject(new Error("timeout")), 10000)
         ),

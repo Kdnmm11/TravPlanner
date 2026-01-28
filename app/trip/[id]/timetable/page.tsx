@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { ArrowRight, Home, MapPin, Plane } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import type { Schedule, ScheduleFormData } from "@/lib/types"
@@ -102,7 +102,8 @@ export default function TripTimeTablePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const shareId = searchParams.get("share")
-  const { trips, schedules, dayInfos, addSchedule, updateSchedule, exportTripData, activeShares } = useTravelStore()
+  const { trips, schedules, dayInfos, addSchedule, updateSchedule, exportTripData, deleteTrip, activeShares } = useTravelStore()
+  const router = useRouter()
   const trip = trips.find((item) => item.id === id)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -233,6 +234,13 @@ export default function TripTimeTablePage() {
   const handleBanMember = async (memberId: string) => {
     if (!effectiveShareId) return
     await banShareMember(effectiveShareId, memberId)
+  }
+
+  const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
+    if (!disabled) return
+    if (clientId && ownerId && clientId === ownerId) return
+    deleteTrip(id)
+    router.replace("/")
   }
   const tableHeight = 740
   const dragMovedRef = useRef(false)
@@ -487,6 +495,7 @@ export default function TripTimeTablePage() {
               setShareOwnerId(ownerId ?? null)
             }}
             onAccessDenied={(denied) => setAccessDenied(denied)}
+            onShareDisabled={handleShareDisabled}
           />
         </div>
 
@@ -976,6 +985,7 @@ export default function TripTimeTablePage() {
             setShareOwnerId(ownerId ?? null)
           }}
           onAccessDenied={(denied) => setAccessDenied(denied)}
+          onShareDisabled={handleShareDisabled}
         />
       )}
 

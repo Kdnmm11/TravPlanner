@@ -163,6 +163,13 @@ export default function TripDetailPage() {
     await banShareMember(effectiveShareId, memberId)
   }
 
+  const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
+    if (!disabled) return
+    if (clientId && ownerId && clientId === ownerId) return
+    deleteTrip(id)
+    router.replace("/")
+  }
+
   if (!trip && effectiveShareId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
@@ -691,6 +698,7 @@ export default function TripDetailPage() {
               setShareOwnerId(ownerId ?? null)
             }}
             onAccessDenied={(denied) => setAccessDenied(denied)}
+            onShareDisabled={handleShareDisabled}
           />
         )}
 

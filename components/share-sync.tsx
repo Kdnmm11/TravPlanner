@@ -19,6 +19,7 @@ export function ShareSync({
   actorRole = "member",
   onMembersChange,
   onAccessDenied,
+  onShareDisabled,
 }: {
   shareId: string
   tripId: string
@@ -33,6 +34,7 @@ export function ShareSync({
   actorRole?: "admin" | "member"
   onMembersChange?: (members: ShareMember[], ownerId?: string | null) => void
   onAccessDenied?: (denied: boolean) => void
+  onShareDisabled?: (disabled: boolean, ownerId?: string | null) => void
 }) {
   const exportTripData = useTravelStore((state) => state.exportTripData)
   const replaceTripData = useTravelStore((state) => state.replaceTripData)
@@ -58,6 +60,11 @@ export function ShareSync({
       const denied = clientId ? (bans ?? []).includes(clientId) : false
       accessDeniedRef.current = denied
       onAccessDenied?.(denied)
+      if (!enabled) {
+        onShareDisabled?.(true, ownerId)
+      } else {
+        onShareDisabled?.(false, ownerId)
+      }
       if (denied || !authed || !enabled || !payload) return
       applyRemoteRef.current = true
       replaceTripData(payload)

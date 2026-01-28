@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { Plane, Search, Plus } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import { BudgetAddModal } from "@/components/budget-add-modal"
@@ -77,8 +77,10 @@ export default function TripBudgetPage() {
     updateSchedule,
     addBudgetItem,
     exportTripData,
+    deleteTrip,
     activeShares,
   } = useTravelStore()
+  const router = useRouter()
 
   const trip = trips.find((item) => item.id === id)
   const tripSchedules = schedules
@@ -221,6 +223,13 @@ export default function TripBudgetPage() {
     await banShareMember(effectiveShareId, memberId)
   }
 
+  const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
+    if (!disabled) return
+    if (clientId && ownerId && clientId === ownerId) return
+    deleteTrip(id)
+    router.replace("/")
+  }
+
   const totalExpense = tripSchedules.reduce((sum, schedule) => {
     const rate = rateMap[schedule.currency] ?? 1
     return sum + schedule.amount * rate
@@ -285,6 +294,7 @@ export default function TripBudgetPage() {
               setShareOwnerId(ownerId ?? null)
             }}
             onAccessDenied={(denied) => setAccessDenied(denied)}
+            onShareDisabled={handleShareDisabled}
           />
         </div>
 
@@ -851,6 +861,7 @@ export default function TripBudgetPage() {
             setShareOwnerId(ownerId ?? null)
           }}
           onAccessDenied={(denied) => setAccessDenied(denied)}
+          onShareDisabled={handleShareDisabled}
         />
       )}
 
