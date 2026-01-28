@@ -84,6 +84,11 @@ export default function TripDetailPage() {
 
   useEffect(() => {
     if (!effectiveShareId || !clientId) return
+    if (!shareId) {
+      setShareName("admin")
+      setShareNameOpen(false)
+      return
+    }
     const nameKey = `trav-share-name:${effectiveShareId}`
     const passKey = `trav-share-pass:${effectiveShareId}`
     const ownerKey = `trav-share-owner:${effectiveShareId}`
