@@ -16,12 +16,10 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoverDate, setHoverDate] = useState<Date | null>(null)
-  const [isPopupDragged, setIsPopupDragged] = useState(false)
-  const fixedPopupPosition = { left: 959, top: 390, width: 520 }
+  const fixedPopupPosition = { left: 959, top: 346, width: 520 }
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
-  const popupDragRef = useRef({ x: 0, y: 0 })
   const [popupStyle, setPopupStyle] = useState<{ top: number; left: number; width: number }>(() => ({
     top: fixedPopupPosition.top,
     left: fixedPopupPosition.left,
@@ -59,7 +57,6 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
 
   useEffect(() => {
     if (isOpen) {
-      setIsPopupDragged(false)
       setPopupStyle({
         top: fixedPopupPosition.top,
         left: fixedPopupPosition.left,
@@ -253,7 +250,6 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
     if (!isOpen) return
 
     const updatePosition = () => {
-      if (isPopupDragged) return
       setPopupStyle({
         top: fixedPopupPosition.top,
         left: fixedPopupPosition.left,
@@ -286,7 +282,7 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
       window.removeEventListener("resize", updatePosition)
       window.removeEventListener("scroll", updatePosition, true)
     }
-  }, [isOpen, isPopupDragged])
+  }, [isOpen])
 
   return (
     <div ref={containerRef} className="relative">
@@ -338,42 +334,9 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
             style={{ top: popupStyle.top, left: popupStyle.left, width: popupStyle.width }}
           >
             {/* Header */}
-            <div
-              className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 cursor-move select-none"
-              onPointerDown={(event) => {
-                if (!popupRef.current) return
-                event.preventDefault()
-                const rect = popupRef.current.getBoundingClientRect()
-                popupDragRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-                setIsPopupDragged(true)
-                event.currentTarget.setPointerCapture(event.pointerId)
-
-                const handleMove = (moveEvent: PointerEvent) => {
-                  const currentRect = popupRef.current?.getBoundingClientRect()
-                  const height = currentRect?.height ?? rect.height
-                  const padding = 12
-                  const width = popupStyle.width
-                  const nextLeft = Math.max(padding, Math.min(moveEvent.clientX - popupDragRef.current.x, window.innerWidth - width - padding))
-                  const nextTop = Math.max(padding, Math.min(moveEvent.clientY - popupDragRef.current.y, window.innerHeight - height - padding))
-                  setPopupStyle((prev) => ({ ...prev, left: nextLeft, top: nextTop }))
-                }
-
-                const handleUp = () => {
-                  if (popupRef.current) {
-                    popupRef.current.releasePointerCapture(event.pointerId)
-                  }
-                  window.removeEventListener("pointermove", handleMove)
-                }
-
-                window.addEventListener("pointermove", handleMove)
-                window.addEventListener("pointerup", handleUp, { once: true })
-              }}
-            >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50">
               <div className="text-xs font-medium text-slate-600">
                 출발일 선택 후 도착일을 선택하세요
-              </div>
-              <div className="text-[11px] text-slate-400">
-                x: {Math.round(popupStyle.left)} / y: {Math.round(popupStyle.top)}
               </div>
               <button
                 type="button"
