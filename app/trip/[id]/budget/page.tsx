@@ -135,6 +135,7 @@ export default function TripBudgetPage() {
   const [sharePasswordOpen, setSharePasswordOpen] = useState(false)
   const [sharePasswordHash, setSharePasswordHash] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const isAdmin = Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
 
   useEffect(() => {
     if (!activeShare) return
@@ -222,8 +223,6 @@ export default function TripBudgetPage() {
     setPasswordError(null)
     setSharePasswordOpen(false)
   }
-
-  const isAdmin = Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
 
   const handleBanMember = async (memberId: string) => {
     if (!effectiveShareId) return
