@@ -9,13 +9,16 @@ import { ScheduleModal } from "@/components/schedule-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { TripModal } from "@/components/trip-modal"
 import { DayInfoModal } from "@/components/day-info-modal"
+import { ShareSync } from "@/components/share-sync"
 import Link from "next/link"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter, useParams, useSearchParams } from "next/navigation"
 import type { Schedule, ScheduleFormData, TripFormData } from "@/lib/types"
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const shareId = searchParams.get("share")
   const {
     trips,
     dayInfos,
@@ -48,6 +51,23 @@ export default function TripDetailPage() {
   const [tripMenuOpen, setTripMenuOpen] = useState(false)
   const [tripModalOpen, setTripModalOpen] = useState(false)
   const [deleteTripModalOpen, setDeleteTripModalOpen] = useState(false)
+  const [shareEnabled, setShareEnabled] = useState(true)
+
+  if (!trip && shareId) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            {shareEnabled ? "공유된 여행 불러오는 중..." : "공유가 꺼져 있습니다"}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
+          </p>
+          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+        </div>
+      </div>
+    )
+  }
 
   if (!trip) {
     return (
@@ -153,25 +173,25 @@ export default function TripDetailPage() {
                 {trip.title}
               </div>
               <Link
-                href={`/trip/${trip.id}`}
+                href={`/trip/${trip.id}${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 font-medium"
               >
                 여행 일정
               </Link>
               <Link
-                href={`/trip/${trip.id}/timetable`}
+                href={`/trip/${trip.id}/timetable${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 타임테이블
               </Link>
               <Link
-                href={`/trip/${trip.id}/budget`}
+                href={`/trip/${trip.id}/budget${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 예산 관리
               </Link>
               <Link
-                href={`/trip/${trip.id}/checklist`}
+                href={`/trip/${trip.id}/checklist${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 체크리스트
@@ -383,6 +403,8 @@ export default function TripDetailPage() {
           title="여행 삭제"
           message="이 여행을 삭제하시겠습니까? 모든 일정이 함께 삭제됩니다."
         />
+
+        {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
       </div>
   )
 }

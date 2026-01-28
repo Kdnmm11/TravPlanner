@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { Plane, Search, Plus } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import { BudgetAddModal } from "@/components/budget-add-modal"
+import { ShareSync } from "@/components/share-sync"
 import type { Schedule } from "@/lib/types"
 
 const currencyCatalog = [
@@ -63,6 +64,8 @@ const formatRateValue = (value: number) => {
 
 export default function TripBudgetPage() {
   const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
+  const shareId = searchParams.get("share")
   const { trips, schedules, exchangeRates, setExchangeRate, updateSchedule, addBudgetItem } = useTravelStore()
 
   const trip = trips.find((item) => item.id === id)
@@ -100,6 +103,7 @@ export default function TripBudgetPage() {
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
+  const [shareEnabled, setShareEnabled] = useState(true)
 
   const totalExpense = tripSchedules.reduce((sum, schedule) => {
     const rate = rateMap[schedule.currency] ?? 1
@@ -107,6 +111,7 @@ export default function TripBudgetPage() {
   }, 0)
 
   const tripDuration = useMemo(() => {
+    if (!trip) return 0
     const start = toLocalDate(trip.startDate)
     const end = toLocalDate(trip.endDate)
     const diff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -127,6 +132,22 @@ export default function TripBudgetPage() {
     const start = toLocalDate(startDate)
     const end = toLocalDate(endDate)
     return `${start.getFullYear()}년 ${start.getMonth() + 1}월 ${start.getDate()}일 - ${end.getMonth() + 1}월 ${end.getDate()}일`
+  }
+
+  if (!trip && shareId) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            {shareEnabled ? "공유된 여행 불러오는 중..." : "공유가 꺼져 있습니다"}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
+          </p>
+          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+        </div>
+      </div>
+    )
   }
 
   if (!trip) {
@@ -170,25 +191,25 @@ export default function TripBudgetPage() {
                 {trip.title}
               </div>
               <Link
-                href={`/trip/${trip.id}`}
+                href={`/trip/${trip.id}${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 여행 일정
               </Link>
               <Link
-                href={`/trip/${trip.id}/timetable`}
+                href={`/trip/${trip.id}/timetable${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 타임테이블
               </Link>
               <Link
-                href={`/trip/${trip.id}/budget`}
+                href={`/trip/${trip.id}/budget${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 font-medium"
               >
                 예산 관리
               </Link>
               <Link
-                href={`/trip/${trip.id}/checklist`}
+                href={`/trip/${trip.id}/checklist${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 체크리스트
@@ -529,6 +550,8 @@ export default function TripBudgetPage() {
           setEditingSchedule(null)
         }}
       />
+
+      {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
     </div>
   )
 }

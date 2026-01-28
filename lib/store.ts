@@ -68,6 +68,14 @@ interface TravelStore {
     checklistItems: ChecklistItem[]
     exchangeRates: ExchangeRate[]
   } | null
+  replaceTripData: (payload: {
+    trip: Trip
+    schedules: Schedule[]
+    dayInfos: DayInfo[]
+    checklistCategories: ChecklistCategory[]
+    checklistItems: ChecklistItem[]
+    exchangeRates: ExchangeRate[]
+  }) => void
   importTripData: (payload: {
     version?: number
     trip: Trip
@@ -639,6 +647,39 @@ export const useTravelStore = create<TravelStore>()(
           exchangeRates: state.exchangeRates,
         }
       },
+
+      replaceTripData: (payload) =>
+        set((state) => {
+          const tripId = payload.trip.id
+          const existingTrip = state.trips.find((item) => item.id === tripId)
+          const trip = existingTrip ? { ...existingTrip, ...payload.trip } : payload.trip
+          const existingCategoryIds = new Set(
+            state.checklistCategories.filter((category) => category.tripId === tripId).map((category) => category.id)
+          )
+
+          return {
+            trips: existingTrip
+              ? state.trips.map((item) => (item.id === tripId ? trip : item))
+              : [...state.trips, trip],
+            schedules: [
+              ...state.schedules.filter((schedule) => schedule.tripId !== tripId),
+              ...payload.schedules,
+            ],
+            dayInfos: [
+              ...state.dayInfos.filter((info) => info.tripId !== tripId),
+              ...payload.dayInfos,
+            ],
+            checklistCategories: [
+              ...state.checklistCategories.filter((category) => category.tripId !== tripId),
+              ...payload.checklistCategories,
+            ],
+            checklistItems: [
+              ...state.checklistItems.filter((item) => !existingCategoryIds.has(item.categoryId)),
+              ...payload.checklistItems,
+            ],
+            exchangeRates: payload.exchangeRates.length ? payload.exchangeRates : state.exchangeRates,
+          }
+        }),
 
       importTripData: (payload) => {
         const state = get()

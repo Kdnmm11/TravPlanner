@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { Plane, Plus, MoreHorizontal } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
+import { ShareSync } from "@/components/share-sync"
 
 export default function TripChecklistPage() {
   const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
+  const shareId = searchParams.get("share")
   const {
     trips,
     checklistCategories,
@@ -43,6 +46,7 @@ export default function TripChecklistPage() {
   const [editCategoryId, setEditCategoryId] = useState<string>("")
   const [editCountable, setEditCountable] = useState(false)
   const [editTarget, setEditTarget] = useState(1)
+  const [shareEnabled, setShareEnabled] = useState(true)
 
   const trip = trips.find((item) => item.id === id)
   const categories = useMemo(
@@ -139,6 +143,22 @@ export default function TripChecklistPage() {
     setEditCategoryPickerOpen(false)
   }
 
+  if (!trip && shareId) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            {shareEnabled ? "공유된 여행 불러오는 중..." : "공유가 꺼져 있습니다"}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
+          </p>
+          <ShareSync shareId={shareId} tripId={id} onStatusChange={setShareEnabled} />
+        </div>
+      </div>
+    )
+  }
+
   if (!trip) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
@@ -180,25 +200,25 @@ export default function TripChecklistPage() {
                 {trip.title}
               </div>
               <Link
-                href={`/trip/${trip.id}`}
+                href={`/trip/${trip.id}${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 여행 일정
               </Link>
               <Link
-                href={`/trip/${trip.id}/timetable`}
+                href={`/trip/${trip.id}/timetable${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 타임테이블
               </Link>
               <Link
-                href={`/trip/${trip.id}/budget`}
+                href={`/trip/${trip.id}/budget${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50"
               >
                 예산 관리
               </Link>
               <Link
-                href={`/trip/${trip.id}/checklist`}
+                href={`/trip/${trip.id}/checklist${shareId ? `?share=${shareId}` : ""}`}
                 className="block w-full text-left px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 font-medium"
               >
                 체크리스트
@@ -749,7 +769,7 @@ export default function TripChecklistPage() {
         </div>
       )}
 
-
+      {shareId && <ShareSync shareId={shareId} tripId={trip.id} />}
     </div>
   )
 }

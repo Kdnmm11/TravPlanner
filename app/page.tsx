@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Plane, Plus, Calendar, MapPin, MoreHorizontal, Edit2, Trash2, Share2 } from "lucide-react"
+import { Plane, Plus, Calendar, MapPin, MoreHorizontal, Edit2, Trash2, Share2, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
+import { createShare, setShareEnabled } from "@/lib/share"
 import { TripModal } from "@/components/trip-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
 import Link from "next/link"
@@ -22,6 +23,19 @@ export default function HomePage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const modalImportRef = useRef<HTMLInputElement | null>(null)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [selectedShareTripId, setSelectedShareTripId] = useState<string | null>(null)
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null)
+  const [shareTripPickerOpen, setShareTripPickerOpen] = useState(false)
+  const [shareLink, setShareLink] = useState<string>("")
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareError, setShareError] = useState<string>("")
+  const [shareDocId, setShareDocId] = useState<string | null>(null)
+  const [shareEnabled, setShareEnabledState] = useState(true)
+  const [shareCopied, setShareCopied] = useState(false)
+  const sharePickerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!openMenuId) return
@@ -33,6 +47,25 @@ export default function HomePage() {
     window.addEventListener("click", handleClick)
     return () => window.removeEventListener("click", handleClick)
   }, [openMenuId])
+
+  useEffect(() => {
+    if (!shareModalOpen) return
+    setShareLink("")
+    setShareDocId(null)
+    setShareEnabledState(true)
+  }, [selectedShareTripId, shareModalOpen])
+
+  useEffect(() => {
+    if (!shareTripPickerOpen) return
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (sharePickerRef.current && !sharePickerRef.current.contains(target)) {
+        setShareTripPickerOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [shareTripPickerOpen])
 
   const handleAddTrip = () => {
     setTripModalMode("add")
@@ -87,6 +120,48 @@ export default function HomePage() {
     }
   }
 
+  const handleCreateShareLink = async () => {
+    const trip = trips.find((item) => item.id === selectedShareTripId)
+    if (!trip) return
+    const payload = exportTripData(trip.id)
+    if (!payload) return
+    setShareLoading(true)
+    setShareError("")
+    try {
+      const shareId = await Promise.race([
+        createShare(payload),
+        new Promise<string>((_, reject) =>
+          window.setTimeout(() => reject(new Error("timeout")), 10000)
+        ),
+      ])
+      const envUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        process.env.NEXT_PUBLIC_VERCEL_URL
+      const baseUrl = envUrl
+        ? envUrl.startsWith("http")
+          ? envUrl
+          : `https://${envUrl}`
+        : window.location.origin
+      const link = `${baseUrl}/trip/${trip.id}?share=${shareId}`
+      setShareLink(link)
+      setShareDocId(shareId)
+      setShareEnabledState(true)
+    } catch (error) {
+      console.error("Share link creation failed", error)
+      setShareError("링크 생성에 실패했습니다. Firestore가 활성화되어 있는지 확인해 주세요.")
+    } finally {
+      setShareLoading(false)
+    }
+  }
+
+  const handleImportConfirm = async () => {
+    if (!selectedImportFile) return
+    await handleImport(selectedImportFile)
+    setSelectedImportFile(null)
+    setImportModalOpen(false)
+  }
+
   const handleExportTrip = (trip: Trip) => {
     const payload = exportTripData(trip.id)
     if (!payload) return
@@ -100,6 +175,31 @@ export default function HomePage() {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
+  }
+
+  const handleToggleShareEnabled = async () => {
+    if (!shareDocId) return
+    const next = !shareEnabled
+    setShareEnabledState(next)
+    try {
+      await setShareEnabled(shareDocId, next)
+    } catch (error) {
+      console.error("Share enabled update failed", error)
+      setShareEnabledState(!next)
+      setShareError("공유 상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    }
+  }
+
+  const handleCopyShareLink = async () => {
+    if (!shareLink) return
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2000)
+    } catch (error) {
+      console.error("Copy failed", error)
+      setShareError("복사에 실패했습니다. 링크를 직접 선택해 주세요.")
+    }
   }
 
   return (
@@ -140,22 +240,23 @@ export default function HomePage() {
                   <p className="text-slate-500 mt-1">총 {trips.length}개의 여행</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      className="bg-white"
-                      onClick={() => {
-                        const firstTrip = trips[0]
-                        if (!firstTrip) return
-                        handleExportTrip(firstTrip)
-                      }}
-                    >
-                      <Share2 className="w-4 h-4 mr-2" />
-                      공유하기
-                    </Button>
                   <Button
                     variant="outline"
                     className="bg-white"
-                    onClick={() => importInputRef.current?.click()}
+                    onClick={() => {
+                      setSelectedShareTripId(trips[0]?.id ?? null)
+                      setShareLink("")
+                      setShareTripPickerOpen(false)
+                      setShareModalOpen(true)
+                    }}
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    공유하기
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="bg-white"
+                    onClick={() => setImportModalOpen(true)}
                   >
                     가져오기
                   </Button>
@@ -258,7 +359,10 @@ export default function HomePage() {
                         <button
                           onClick={(e) => {
                             e.preventDefault()
-                            handleExportTrip(trip)
+                            setSelectedShareTripId(trip.id)
+                            setShareLink("")
+                            setShareTripPickerOpen(false)
+                            setShareModalOpen(true)
                           }}
                           className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                         >
@@ -329,6 +433,165 @@ export default function HomePage() {
         title="여행 삭제"
         message="이 여행을 삭제하시겠습니까? 모든 일정이 함께 삭제됩니다."
       />
+
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShareModalOpen(false)} />
+          <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <div className="mb-4 text-lg font-bold text-slate-900">공유하기</div>
+            <label className="text-sm font-semibold text-slate-700">공유할 여행</label>
+            <div ref={sharePickerRef} className="relative mt-2">
+              <button
+                type="button"
+                onClick={() => setShareTripPickerOpen((prev) => !prev)}
+                className="w-full rounded-lg bg-slate-100 px-3 py-2 text-left text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200 flex items-center justify-between"
+              >
+                <div className={`font-semibold ${selectedShareTripId ? "text-slate-900" : "text-slate-400"}`}>
+                  {trips.find((trip) => trip.id === selectedShareTripId)?.title ?? "여행 선택"}
+                </div>
+                <span className="text-slate-400">▾</span>
+              </button>
+              {shareTripPickerOpen && (
+                <div className="absolute left-0 right-0 top-full z-20 mt-2 rounded-xl border border-slate-200 bg-white">
+                  <div className="relative max-h-56 overflow-y-auto py-2">
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-white to-transparent" />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-white to-transparent" />
+                    <div className="space-y-1 px-2">
+                      {trips.map((trip) => (
+                        <button
+                          key={trip.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedShareTripId(trip.id)
+                            setShareTripPickerOpen(false)
+                          }}
+                          className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                            trip.id === selectedShareTripId
+                              ? "bg-emerald-50 text-emerald-700 font-semibold"
+                              : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {trip.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(false)}
+                className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateShareLink}
+                className="flex-1 rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-600"
+              >
+                {shareLoading ? "생성 중..." : "링크 생성"}
+              </button>
+            </div>
+            {shareError && <div className="mt-3 text-xs font-semibold text-red-500">{shareError}</div>}
+            {shareLink && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <LinkIcon className="h-4 w-4" />
+                  공유 링크
+                </div>
+                <div className="mt-2 text-xs font-semibold text-slate-700 break-all">{shareLink}</div>
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="mt-3 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600"
+                >
+                  복사
+                </button>
+                {shareCopied && (
+                  <div className="mt-2 text-[11px] font-semibold text-emerald-600">
+                    복사되었습니다
+                  </div>
+                )}
+                {shareDocId && (
+                  <div className="mt-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div className="text-xs font-semibold text-slate-600">
+                      공유 상태:{" "}
+                      <span className={shareEnabled ? "text-emerald-600" : "text-slate-400"}>
+                        {shareEnabled ? "켜짐" : "꺼짐"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleShareEnabled}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        shareEnabled
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-emerald-500 text-white hover:bg-emerald-600"
+                      }`}
+                    >
+                      {shareEnabled ? "공유 끄기" : "공유 켜기"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {importModalOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setImportModalOpen(false)} />
+          <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <div className="mb-4 text-lg font-bold text-slate-900">가져오기</div>
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+              <div className="text-sm font-semibold text-slate-600">
+                {selectedImportFile ? selectedImportFile.name : "JSON 파일을 선택하세요"}
+              </div>
+              <button
+                type="button"
+                onClick={() => modalImportRef.current?.click()}
+                className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600"
+              >
+                파일 선택
+              </button>
+              <input
+                ref={modalImportRef}
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null
+                  setSelectedImportFile(file)
+                }}
+              />
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedImportFile(null)
+                  setImportModalOpen(false)
+                }}
+                className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={handleImportConfirm}
+                className="flex-1 rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-600"
+                disabled={!selectedImportFile}
+              >
+                가져오기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
