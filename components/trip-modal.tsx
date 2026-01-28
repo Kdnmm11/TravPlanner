@@ -19,8 +19,6 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
   const [destination, setDestination] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const dragOffsetRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
     if (initialData && mode === "edit") {
@@ -36,11 +34,6 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
     }
   }, [initialData, mode, isOpen])
 
-  useEffect(() => {
-    if (!isOpen) return
-    setPosition({ x: 508, y: 124 })
-  }, [isOpen])
-
   if (!isOpen) return null
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -55,45 +48,19 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
     setEndDate(end)
   }
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const target = event.currentTarget
-    const modal = target.closest("[data-trip-modal]") as HTMLElement | null
-    const rect = modal?.getBoundingClientRect() ?? target.getBoundingClientRect()
-    dragOffsetRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-    target.setPointerCapture(event.pointerId)
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      const nextX = Math.max(12, moveEvent.clientX - dragOffsetRef.current.x)
-      const nextY = Math.max(12, moveEvent.clientY - dragOffsetRef.current.y)
-      setPosition({ x: nextX, y: nextY })
-    }
-
-    const handleUp = () => {
-      target.releasePointerCapture(event.pointerId)
-      window.removeEventListener("pointermove", handleMove)
-      window.removeEventListener("pointerup", handleUp)
-    }
-
-    window.addEventListener("pointermove", handleMove)
-    window.addEventListener("pointerup", handleUp, { once: true })
-  }
-
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div
         data-trip-modal
-        className="fixed bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100"
-        style={{ left: `${position.x}px`, top: `${position.y}px` }}
+        className="fixed left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100"
       >
         <div
-          className="sticky top-0 bg-white px-6 pt-6 pb-4 border-b border-slate-100 z-10 cursor-move select-none"
-          onPointerDown={handlePointerDown}
+          className="sticky top-0 bg-white px-6 pt-6 pb-4 border-b border-slate-100 z-10"
         >
           <h2 className="text-xl font-bold text-slate-900">
             {mode === "add" ? "새 여행 만들기" : "여행 수정하기"}
           </h2>
-          <p className="text-xs text-slate-400 mt-1">x: {Math.round(position.x)} / y: {Math.round(position.y)}</p>
         </div>
         
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
