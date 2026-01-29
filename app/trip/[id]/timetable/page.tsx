@@ -9,7 +9,13 @@ import type { Schedule, ScheduleFormData } from "@/lib/types"
 import { ScheduleModal } from "@/components/schedule-modal"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
-import { banShareMember, hashPassword, setSharePassword, updateShare } from "@/lib/share"
+import {
+  banShareMember,
+  hashPassword,
+  setShareEnabled as setShareEnabledRemote,
+  setSharePassword,
+  updateShare,
+} from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
 
 const hourHeightDefault = 56
@@ -132,7 +138,7 @@ export default function TripTimeTablePage() {
   } | null>(null)
   const activeShare = activeShares[id]
   const effectiveShareId = shareId ?? activeShare?.shareId ?? null
-  const [shareEnabled, setShareEnabled] = useState(activeShare?.enabled ?? true)
+  const [shareEnabled, setShareEnabledState] = useState(activeShare?.enabled ?? true)
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
   const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -153,11 +159,12 @@ export default function TripTimeTablePage() {
   const [sharePasswordEnabled, setSharePasswordEnabled] = useState(false)
   const [shareSettingsError, setShareSettingsError] = useState<string | null>(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
-  const isAdmin = Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
+  const [isLocalAdmin, setIsLocalAdmin] = useState(false)
+  const isAdmin = isLocalAdmin || Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
 
   useEffect(() => {
     if (!activeShare) return
-    setShareEnabled(activeShare.enabled)
+    setShareEnabledState(activeShare.enabled)
   }, [activeShare?.enabled])
 
   useEffect(() => {
@@ -165,6 +172,7 @@ export default function TripTimeTablePage() {
     if (!shareId) {
       setShareName("admin")
       setShareNameOpen(false)
+      setIsLocalAdmin(true)
       return
     }
     const nameKey = `trav-share-name:${effectiveShareId}`
@@ -181,11 +189,14 @@ export default function TripTimeTablePage() {
     if (isOwnerByKey || isOwnerByDoc) {
       setShareName("admin")
       setShareNameOpen(false)
+      setIsLocalAdmin(true)
     } else if (storedName) {
       setShareName(storedName)
       setShareNameOpen(false)
+      setIsLocalAdmin(false)
     } else {
       setShareNameOpen(true)
+      setIsLocalAdmin(false)
     }
     if (storedPass) {
       setSharePasswordHash(storedPass)
@@ -292,6 +303,19 @@ export default function TripTimeTablePage() {
     localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
     setSharePasswordHash(hash)
     setShareSettingsOpen(false)
+  }
+
+  const handleToggleShareEnabled = async () => {
+    if (!effectiveShareId || !isAdmin) return
+    const next = !shareEnabled
+    setShareEnabledState(next)
+    try {
+      await setShareEnabledRemote(effectiveShareId, next)
+    } catch (error) {
+      console.error("Share enabled update failed", error)
+      setShareEnabledState(!next)
+      setShareSettingsError("공유 상태를 변경하지 못했습니다.")
+    }
   }
 
   useEffect(() => {
@@ -1124,6 +1148,21 @@ export default function TripTimeTablePage() {
                 {shareSettingsError && (
                   <div className="mt-2 text-xs font-semibold text-red-500">{shareSettingsError}</div>
                 )}
+              </div>
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-slate-600">공유 상태</div>
+                <button
+                  type="button"
+                  onClick={handleToggleShareEnabled}
+                  disabled={!isAdmin}
+                  className={`mt-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                    shareEnabled
+                      ? "bg-emerald-500 text-white"
+                      : "border border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {shareEnabled ? "공유 끄기" : "공유 켜기"}
+                </button>
               </div>
               <div className="mt-5 flex items-center justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setShareSettingsOpen(false)}>
