@@ -40,6 +40,8 @@ export function ShareSync({
   const replaceTripData = useTravelStore((state) => state.replaceTripData)
   const applyRemoteRef = useRef(false)
   const debounceRef = useRef<number | null>(null)
+  const pushInFlightRef = useRef(false)
+  const pendingPayloadSignatureRef = useRef<string | null>(null)
   const shareEnabledRef = useRef(true)
   const passwordRequiredRef = useRef(false)
   const lastPayloadRef = useRef<SharePayload | null>(null)
@@ -110,6 +112,15 @@ export function ShareSync({
           emitStatus("공유 데이터 형식 오류")
           return
         }
+        const incomingSignature = createPayloadSignature(payload)
+        const pendingSignature = pendingPayloadSignatureRef.current
+        if (pendingSignature) {
+          if (incomingSignature === pendingSignature) {
+            pendingPayloadSignatureRef.current = null
+          } else if (debounceRef.current !== null || pushInFlightRef.current) {
+            return
+          }
+        }
         emitStatus(null)
         applyRemoteRef.current = true
         replaceTripData(payload)
@@ -171,10 +182,15 @@ export function ShareSync({
       if (accessDeniedRef.current) return
       const payload = exportTripData(tripId)
       if (!payload) return
+      pendingPayloadSignatureRef.current = createPayloadSignature(payload)
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
       debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null
+        pushInFlightRef.current = true
         updateShare(shareId, payload)
           .then(() => {
+            pushInFlightRef.current = false
+            pendingPayloadSignatureRef.current = null
             emitStatus(null)
             onSync?.("push")
             const action = describeChange(lastPayloadRef.current, payload)
@@ -197,6 +213,8 @@ export function ShareSync({
             lastPayloadRef.current = payload
           })
           .catch((error) => {
+            pushInFlightRef.current = false
+            pendingPayloadSignatureRef.current = null
             console.error("Share update failed", error)
             const code =
               typeof error === "object" &&
@@ -220,6 +238,9 @@ export function ShareSync({
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current)
       }
+      debounceRef.current = null
+      pushInFlightRef.current = false
+      pendingPayloadSignatureRef.current = null
     }
   }, [shareId, tripId, exportTripData, localPasswordHash, actorRole, clientId, actorName, onSync, onError, onShareDisabled, isLocalFallbackClient])
 
@@ -277,6 +298,10 @@ function isValidSharePayload(payload: unknown): payload is SharePayload {
     Array.isArray(candidate.checklistItems) &&
     Array.isArray(candidate.exchangeRates)
   )
+}
+
+function createPayloadSignature(payload: SharePayload) {
+  return JSON.stringify(payload)
 }
 
 function isAuthErrorCode(code?: string) {
