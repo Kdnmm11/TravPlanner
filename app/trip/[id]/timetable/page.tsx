@@ -110,7 +110,7 @@ export default function TripTimeTablePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const shareId = searchParams.get("share")
-  const { trips, schedules, dayInfos, addSchedule, updateSchedule, exportTripData, activeShares } = useTravelStore()
+  const { trips, schedules, dayInfos, addSchedule, updateSchedule, deleteTrip, exportTripData, activeShares } = useTravelStore()
   const router = useRouter()
   const trip = trips.find((item) => item.id === id)
 
@@ -218,8 +218,11 @@ export default function TripTimeTablePage() {
   useEffect(() => {
     if (!accessDenied) return
     if (isAdmin) return
+    if (shareId) {
+      deleteTrip(id)
+    }
     router.replace("/")
-  }, [accessDenied, isAdmin, router])
+  }, [accessDenied, isAdmin, router, shareId, deleteTrip, id])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -334,6 +337,9 @@ export default function TripTimeTablePage() {
   const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
     if (!disabled) return
     if (clientId && ownerId && clientId === ownerId) return
+    if (shareId) {
+      deleteTrip(id)
+    }
     router.replace("/")
   }
   const tableHeight = 740

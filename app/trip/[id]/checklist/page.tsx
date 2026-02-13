@@ -35,6 +35,7 @@ export default function TripChecklistPage() {
     updateChecklistItem,
     updateChecklistCategory,
     addChecklistPreset,
+    deleteTrip,
     exportTripData,
     activeShares,
   } = useTravelStore()
@@ -141,8 +142,11 @@ export default function TripChecklistPage() {
   useEffect(() => {
     if (!accessDenied) return
     if (isAdmin) return
+    if (shareId) {
+      deleteTrip(id)
+    }
     router.replace("/")
-  }, [accessDenied, isAdmin, router])
+  }, [accessDenied, isAdmin, router, shareId, deleteTrip, id])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -257,6 +261,9 @@ export default function TripChecklistPage() {
   const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
     if (!disabled) return
     if (clientId && ownerId && clientId === ownerId) return
+    if (shareId) {
+      deleteTrip(id)
+    }
     router.replace("/")
   }
 

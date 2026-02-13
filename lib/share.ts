@@ -168,6 +168,16 @@ export function subscribeShare(
   return onSnapshot(
     doc(db, "shares", shareId),
     (snapshot) => {
+      if (!snapshot.exists()) {
+        onData({
+          enabled: false,
+          passwordHash: null,
+          members: {},
+          bans: [],
+          ownerId: null,
+        })
+        return
+      }
       const data = snapshot.data()
       const enabled = data?.enabled !== false
       onData({

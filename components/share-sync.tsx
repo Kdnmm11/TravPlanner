@@ -46,20 +46,26 @@ export function ShareSync({
   const lastLogRef = useRef<{ action: string; time: number } | null>(null)
   const accessDeniedRef = useRef(false)
   const syncBlockedRef = useRef(false)
-  const localAuthWarningShownRef = useRef(false)
+  const lastStatusRef = useRef<string | null>(null)
   const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
+
+  const emitStatus = (message: string | null) => {
+    if (lastStatusRef.current === message) return
+    lastStatusRef.current = message
+    onError?.(message ?? "")
+  }
 
   useEffect(() => {
     if (!shareId) return
     if (!clientId || isLocalFallbackClient) {
       shareEnabledRef.current = false
-      if (isLocalFallbackClient && !localAuthWarningShownRef.current) {
-        localAuthWarningShownRef.current = true
-        onError?.("인증 설정 문제로 공유 동기화를 사용할 수 없습니다.")
+      if (!clientId) {
+        emitStatus("인증 초기화 중입니다. 잠시 후 다시 시도해 주세요.")
+      } else {
+        emitStatus("Firebase 인증 설정 문제로 실시간 동기화를 사용할 수 없습니다.")
       }
       return
     }
-    localAuthWarningShownRef.current = false
     syncBlockedRef.current = false
     const unsubscribe = subscribeShare(
       shareId,
@@ -84,11 +90,27 @@ export function ShareSync({
         } else {
           onShareDisabled?.(false, ownerId)
         }
-        if (denied || !authed || !enabled || !payload) return
-        if (!isValidSharePayload(payload)) {
-          onError?.("공유 데이터 형식 오류")
+        if (denied) {
+          emitStatus("공유 접근이 차단되어 실시간 동기화가 중단되었습니다.")
           return
         }
+        if (!enabled) {
+          emitStatus("공유가 꺼져 있어 실시간 동기화가 중단되었습니다.")
+          return
+        }
+        if (!authed && requiresPassword) {
+          emitStatus("공유 비밀번호 인증이 필요합니다.")
+          return
+        }
+        if (!payload) {
+          emitStatus("공유 데이터를 불러오는 중입니다.")
+          return
+        }
+        if (!isValidSharePayload(payload)) {
+          emitStatus("공유 데이터 형식 오류")
+          return
+        }
+        emitStatus(null)
         applyRemoteRef.current = true
         replaceTripData(payload)
         onSync?.("pull")
@@ -101,7 +123,10 @@ export function ShareSync({
         console.error("Share subscription failed", error)
         syncBlockedRef.current = true
         shareEnabledRef.current = false
-        onError?.(toShareErrorMessage(error.code))
+        if (isAuthErrorCode(error.code) || error.code === "not-found") {
+          onShareDisabled?.(true, null)
+        }
+        emitStatus(toShareErrorMessage(error.code))
       }
     )
     return () => unsubscribe()
@@ -150,6 +175,7 @@ export function ShareSync({
       debounceRef.current = window.setTimeout(() => {
         updateShare(shareId, payload)
           .then(() => {
+            emitStatus(null)
             onSync?.("push")
             const action = describeChange(lastPayloadRef.current, payload)
             if (action) {
@@ -182,7 +208,10 @@ export function ShareSync({
             if (isAuthErrorCode(code)) {
               syncBlockedRef.current = true
             }
-            onError?.(toShareErrorMessage(code))
+            if (isAuthErrorCode(code) || code === "not-found") {
+              onShareDisabled?.(true, null)
+            }
+            emitStatus(toShareErrorMessage(code))
           })
       }, 100)
     })
@@ -192,7 +221,7 @@ export function ShareSync({
         window.clearTimeout(debounceRef.current)
       }
     }
-  }, [shareId, tripId, exportTripData, localPasswordHash, actorRole, clientId, actorName, onSync, onError, isLocalFallbackClient])
+  }, [shareId, tripId, exportTripData, localPasswordHash, actorRole, clientId, actorName, onSync, onError, onShareDisabled, isLocalFallbackClient])
 
   useEffect(() => {
     if (actorRole !== "admin") return
@@ -256,10 +285,13 @@ function isAuthErrorCode(code?: string) {
 
 function toShareErrorMessage(code?: string) {
   if (isAuthErrorCode(code)) {
-    return "공유 권한이 없어 동기화에 실패했습니다."
+    return "인증/권한 문제로 실시간 동기화가 중단되었습니다."
   }
   if (code === "not-found") {
-    return "공유 문서를 찾을 수 없습니다."
+    return "공유 문서를 찾을 수 없습니다. 링크가 만료되었거나 삭제되었습니다."
   }
-  return "업로드 실패"
+  if (code === "unavailable" || code === "deadline-exceeded") {
+    return "네트워크 문제로 실시간 동기화가 지연되고 있습니다."
+  }
+  return "실시간 동기화 중 오류가 발생했습니다."
 }

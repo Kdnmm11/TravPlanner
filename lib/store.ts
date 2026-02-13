@@ -262,6 +262,8 @@ export const useTravelStore = create<TravelStore>()(
         set((state) => {
           const remainingTrips = state.trips.filter((trip) => trip.id !== id)
           const remainingCategories = state.checklistCategories.filter((category) => category.tripId !== id)
+          const nextActiveShares = { ...state.activeShares }
+          delete nextActiveShares[id]
           return {
             trips: remainingTrips,
             schedules: state.schedules.filter((schedule) => schedule.tripId !== id),
@@ -272,6 +274,7 @@ export const useTravelStore = create<TravelStore>()(
             ),
             selectedTripId:
               state.selectedTripId === id ? (remainingTrips[0]?.id ?? null) : state.selectedTripId,
+            activeShares: nextActiveShares,
           }
         }),
 
