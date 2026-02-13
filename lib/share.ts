@@ -6,6 +6,7 @@ import {
   collection,
   deleteField,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -18,6 +19,7 @@ import type { Trip, Schedule, DayInfo, ChecklistCategory, ChecklistItem, Exchang
 
 export type ShareLog = {
   id: string
+  uid?: string
   user: string
   action: string
   clientTs?: number
@@ -33,6 +35,7 @@ export type ShareMember = {
 
 export type ShareMessage = {
   id: string
+  uid: string
   user: string
   text: string
   createdAt?: unknown
@@ -54,23 +57,23 @@ export async function createShare(
   ownerId?: string,
   ownerName?: string
 ) {
+  if (!ownerId) {
+    throw new Error("owner id is required")
+  }
   const ref = await addDoc(collection(db, "shares"), {
     payload,
     tripId: payload.trip.id,
     enabled: true,
     passwordHash: passwordHash || null,
-    logs: [],
-    ownerId: ownerId || null,
-    members: ownerId
-      ? {
-          [ownerId]: {
-            id: ownerId,
-            name: ownerName || "admin",
-            role: "admin",
-            lastSeen: serverTimestamp(),
-          },
-        }
-      : {},
+    ownerId,
+    members: {
+      [ownerId]: {
+        id: ownerId,
+        name: ownerName || "admin",
+        role: "admin",
+        lastSeen: serverTimestamp(),
+      },
+    },
     bans: [],
     updatedAt: serverTimestamp(),
   })
@@ -90,9 +93,9 @@ export async function updateShare(shareId: string, payload: SharePayload) {
 }
 
 export async function addShareLog(shareId: string, log: ShareLog) {
-  await updateDoc(doc(db, "shares", shareId), {
-    logs: arrayUnion({ ...log, createdAt: serverTimestamp() }),
-    updatedAt: serverTimestamp(),
+  await addDoc(collection(db, "shares", shareId, "logs"), {
+    ...log,
+    createdAt: serverTimestamp(),
   })
 }
 
@@ -155,7 +158,6 @@ export function subscribeShare(
     payload?: SharePayload
     enabled: boolean
     passwordHash?: string | null
-    logs?: ShareLog[]
     members?: Record<string, ShareMember>
     bans?: string[]
     ownerId?: string | null
@@ -168,11 +170,31 @@ export function subscribeShare(
       payload: data?.payload as SharePayload | undefined,
       enabled,
       passwordHash: data?.passwordHash ?? null,
-      logs: (data?.logs as ShareLog[]) ?? [],
       members: (data?.members as Record<string, ShareMember>) ?? {},
       bans: (data?.bans as string[]) ?? [],
       ownerId: data?.ownerId ?? null,
     })
+  })
+}
+
+export function subscribeShareLogs(
+  shareId: string,
+  onData: (logs: ShareLog[]) => void,
+  maxLogs = 100
+) {
+  const logsQuery = query(
+    collection(db, "shares", shareId, "logs"),
+    orderBy("createdAt", "desc"),
+    limit(maxLogs)
+  )
+  return onSnapshot(logsQuery, (snapshot) => {
+    const logs = snapshot.docs
+      .map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<ShareLog, "id">),
+      }))
+      .reverse()
+    onData(logs)
   })
 }
 
@@ -192,14 +214,19 @@ export async function sendShareMessage(shareId: string, message: Omit<ShareMessa
 
 export function subscribeShareMessages(
   shareId: string,
-  onData: (messages: ShareMessage[]) => void
+  onData: (messages: ShareMessage[]) => void,
+  maxMessages = 200
 ) {
-  const q = query(collection(db, "shares", shareId, "messages"), orderBy("createdAt", "asc"))
+  const q = query(
+    collection(db, "shares", shareId, "messages"),
+    orderBy("createdAt", "desc"),
+    limit(maxMessages)
+  )
   return onSnapshot(q, (snapshot) => {
     const messages = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ShareMessage, "id">),
-    }))
+    })).reverse()
     onData(messages)
   })
 }

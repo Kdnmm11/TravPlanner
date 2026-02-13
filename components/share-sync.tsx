@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { useTravelStore } from "@/lib/store"
-import { addShareLog, subscribeShare, updateShare, upsertShareMember } from "@/lib/share"
+import { addShareLog, subscribeShare, subscribeShareLogs, updateShare, upsertShareMember } from "@/lib/share"
 import type { ShareLog, ShareMember, SharePayload } from "@/lib/share"
 
 export function ShareSync({
@@ -48,10 +48,9 @@ export function ShareSync({
 
   useEffect(() => {
     if (!shareId) return
-    const unsubscribe = subscribeShare(shareId, ({ payload, enabled, passwordHash, logs, members, bans, ownerId }) => {
+    const unsubscribe = subscribeShare(shareId, ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
       shareEnabledRef.current = enabled
       onStatusChange?.(enabled)
-      onLogsChange?.(logs ?? [])
       onMembersChange?.(Object.values(members ?? {}), ownerId)
       const requiresPassword = Boolean(passwordHash)
       passwordRequiredRef.current = requiresPassword
@@ -70,6 +69,10 @@ export function ShareSync({
         onShareDisabled?.(false, ownerId)
       }
       if (denied || !authed || !enabled || !payload) return
+      if (!isValidSharePayload(payload)) {
+        onError?.("공유 데이터 형식 오류")
+        return
+      }
       applyRemoteRef.current = true
       replaceTripData(payload)
       onSync?.("pull")
@@ -86,11 +89,18 @@ export function ShareSync({
     onSync,
     localPasswordHash,
     onAuthRequired,
-    onLogsChange,
     onMembersChange,
     clientId,
     onAccessDenied,
+    onShareDisabled,
+    onError,
   ])
+
+  useEffect(() => {
+    if (!shareId || !onLogsChange) return
+    const unsubscribe = subscribeShareLogs(shareId, onLogsChange, 100)
+    return () => unsubscribe()
+  }, [shareId, onLogsChange])
 
   useEffect(() => {
     if (!shareId || !tripId) return
@@ -111,12 +121,15 @@ export function ShareSync({
               const now = Date.now()
               const last = lastLogRef.current
               if (!last || last.action !== action || now - last.time > 2000) {
-                addShareLog(shareId, {
-                  id: Math.random().toString(36).slice(2, 9),
-                  user: actorName?.trim() || "익명",
-                  action,
-                  clientTs: Date.now(),
-                }).catch(() => undefined)
+                if (clientId) {
+                  addShareLog(shareId, {
+                    id: Math.random().toString(36).slice(2, 9),
+                    uid: clientId,
+                    user: actorName?.trim() || "익명",
+                    action,
+                    clientTs: Date.now(),
+                  }).catch(() => undefined)
+                }
                 lastLogRef.current = { action, time: now }
               }
             }
@@ -137,6 +150,7 @@ export function ShareSync({
   }, [shareId, tripId, exportTripData])
 
   useEffect(() => {
+    if (actorRole !== "admin") return
     if (!shareId || !clientId || !actorName) return
     const member: ShareMember = {
       id: clientId,
@@ -163,4 +177,30 @@ function describeChange(prev: SharePayload | null, next: SharePayload) {
   if (next.exchangeRates.length !== prev.exchangeRates.length) return "환율 변경"
   if (next.schedules !== prev.schedules) return "일정 수정"
   return "내용 수정"
+}
+
+function isValidSharePayload(payload: unknown): payload is SharePayload {
+  if (!payload || typeof payload !== "object") return false
+  const candidate = payload as Record<string, unknown>
+  const trip = candidate.trip
+  if (!trip || typeof trip !== "object") return false
+  const tripCandidate = trip as Record<string, unknown>
+  if (
+    typeof tripCandidate.id !== "string" ||
+    typeof tripCandidate.title !== "string" ||
+    typeof tripCandidate.destination !== "string" ||
+    typeof tripCandidate.startDate !== "string" ||
+    typeof tripCandidate.endDate !== "string"
+  ) {
+    return false
+  }
+
+  return (
+    (candidate.version === undefined || typeof candidate.version === "number") &&
+    Array.isArray(candidate.schedules) &&
+    Array.isArray(candidate.dayInfos) &&
+    Array.isArray(candidate.checklistCategories) &&
+    Array.isArray(candidate.checklistItems) &&
+    Array.isArray(candidate.exchangeRates)
+  )
 }

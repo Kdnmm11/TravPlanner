@@ -5,10 +5,56 @@ import { Plane, Plus, Calendar, MapPin, MoreHorizontal, Edit2, Trash2, Share2, L
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
 import { createShare, hashPassword, setShareEnabled } from "@/lib/share"
+import { ensureAuthUid } from "@/lib/firebase"
 import { TripModal } from "@/components/trip-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
 import Link from "next/link"
-import type { Trip, TripFormData } from "@/lib/types"
+import type {
+  ChecklistCategory,
+  ChecklistItem,
+  DayInfo,
+  ExchangeRate,
+  Schedule,
+  Trip,
+  TripFormData,
+} from "@/lib/types"
+
+type ImportPayload = {
+  version?: number
+  trip: Trip
+  schedules?: Schedule[]
+  dayInfos?: DayInfo[]
+  checklistCategories?: ChecklistCategory[]
+  checklistItems?: ChecklistItem[]
+  exchangeRates?: ExchangeRate[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function isImportPayload(value: unknown): value is ImportPayload {
+  if (!isRecord(value)) return false
+  const trip = value.trip
+  if (!isRecord(trip)) return false
+  if (
+    typeof trip.id !== "string" ||
+    typeof trip.title !== "string" ||
+    typeof trip.destination !== "string" ||
+    typeof trip.startDate !== "string" ||
+    typeof trip.endDate !== "string"
+  ) {
+    return false
+  }
+  return (
+    (value.version === undefined || typeof value.version === "number") &&
+    (value.schedules === undefined || Array.isArray(value.schedules)) &&
+    (value.dayInfos === undefined || Array.isArray(value.dayInfos)) &&
+    (value.checklistCategories === undefined || Array.isArray(value.checklistCategories)) &&
+    (value.checklistItems === undefined || Array.isArray(value.checklistItems)) &&
+    (value.exchangeRates === undefined || Array.isArray(value.exchangeRates))
+  )
+}
 
 export default function HomePage() {
   const {
@@ -47,6 +93,7 @@ export default function HomePage() {
   const [shareCopied, setShareCopied] = useState(false)
   const [sharePasswordEnabled, setSharePasswordEnabled] = useState(false)
   const [sharePassword, setSharePassword] = useState("")
+  const [importError, setImportError] = useState("")
   const [clientId, setClientId] = useState<string | null>(null)
   const sharePickerRef = useRef<HTMLDivElement | null>(null)
 
@@ -71,14 +118,19 @@ export default function HomePage() {
   }, [selectedShareTripId, shareModalOpen])
 
   useEffect(() => {
-    const existing = localStorage.getItem("trav-client-id")
-    if (existing) {
-      setClientId(existing)
-      return
+    let cancelled = false
+    ensureAuthUid()
+      .then((uid) => {
+        if (cancelled) return
+        setClientId(uid)
+        localStorage.setItem("trav-client-id", uid)
+      })
+      .catch((error) => {
+        console.error("Auth init failed", error)
+      })
+    return () => {
+      cancelled = true
     }
-    const next = Math.random().toString(36).slice(2, 10)
-    localStorage.setItem("trav-client-id", next)
-    setClientId(next)
   }, [])
 
   useEffect(() => {
@@ -150,10 +202,22 @@ export default function HomePage() {
   const handleImport = async (file: File) => {
     try {
       const text = await file.text()
-      const payload = JSON.parse(text)
-      importTripData(payload)
+      const parsed: unknown = JSON.parse(text)
+      if (!isImportPayload(parsed)) {
+        setImportError("지원하지 않는 여행 파일 형식입니다.")
+        return false
+      }
+      const importedTripId = importTripData(parsed)
+      if (!importedTripId) {
+        setImportError("여행 데이터를 불러오지 못했습니다.")
+        return false
+      }
+      setImportError("")
+      return true
     } catch (error) {
       console.error("Import failed", error)
+      setImportError("파일을 읽지 못했습니다. JSON 형식을 확인해 주세요.")
+      return false
     }
   }
 
@@ -168,13 +232,14 @@ export default function HomePage() {
       const passwordHash = sharePasswordEnabled && sharePassword.trim()
         ? await hashPassword(sharePassword.trim())
         : null
-      const ownerId = clientId || localStorage.getItem("trav-client-id") || Math.random().toString(36).slice(2, 10)
-      if (!clientId) {
-        localStorage.setItem("trav-client-id", ownerId)
-        setClientId(ownerId)
+      let resolvedClientId = clientId
+      if (!resolvedClientId) {
+        resolvedClientId = await ensureAuthUid()
+        setClientId(resolvedClientId)
+        localStorage.setItem("trav-client-id", resolvedClientId)
       }
       const shareId = await Promise.race([
-        createShare(payload, passwordHash, ownerId, "admin"),
+        createShare(payload, passwordHash, resolvedClientId, "admin"),
         new Promise<string>((_, reject) =>
           window.setTimeout(() => reject(new Error("timeout")), 10000)
         ),
@@ -184,7 +249,6 @@ export default function HomePage() {
       setShareDocId(shareId)
       setShareEnabledState(true)
       setActiveShare(trip.id, shareId, true)
-      localStorage.setItem(`trav-share-owner:${shareId}`, ownerId)
       if (passwordHash) {
         localStorage.setItem(`trav-share-pass:${shareId}`, passwordHash)
       }
@@ -198,8 +262,10 @@ export default function HomePage() {
 
   const handleImportConfirm = async () => {
     if (!selectedImportFile) return
-    await handleImport(selectedImportFile)
+    const imported = await handleImport(selectedImportFile)
+    if (!imported) return
     setSelectedImportFile(null)
+    setImportError("")
     setImportModalOpen(false)
   }
 
@@ -309,7 +375,10 @@ export default function HomePage() {
                   <Button
                     variant="outline"
                     className="bg-white"
-                    onClick={() => setImportModalOpen(true)}
+                    onClick={() => {
+                      setImportError("")
+                      setImportModalOpen(true)
+                    }}
                   >
                     가져오기
                   </Button>
@@ -330,7 +399,7 @@ export default function HomePage() {
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (!file) return
-                  handleImport(file)
+                  void handleImport(file)
                   event.target.value = ""
                 }}
               />
@@ -620,7 +689,13 @@ export default function HomePage() {
 
       {importModalOpen && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setImportModalOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setImportError("")
+              setImportModalOpen(false)
+            }}
+          />
           <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
             <div className="mb-4 text-lg font-bold text-slate-900">가져오기</div>
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
@@ -642,6 +717,7 @@ export default function HomePage() {
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null
                   setSelectedImportFile(file)
+                  setImportError("")
                 }}
               />
             </div>
@@ -650,6 +726,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => {
                   setSelectedImportFile(null)
+                  setImportError("")
                   setImportModalOpen(false)
                 }}
                 className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600"
@@ -665,6 +742,7 @@ export default function HomePage() {
                 가져오기
               </button>
             </div>
+            {importError && <div className="mt-3 text-xs font-semibold text-red-500">{importError}</div>}
           </div>
         </div>
       )}

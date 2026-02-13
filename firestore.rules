@@ -1,0 +1,107 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function shareDoc(shareId) {
+      return get(/databases/$(database)/documents/shares/$(shareId));
+    }
+
+    function shareData(shareId) {
+      return shareDoc(shareId).data;
+    }
+
+    function isOwner(shareId) {
+      return isSignedIn() && shareData(shareId).ownerId == request.auth.uid;
+    }
+
+    function bans(shareId) {
+      return shareData(shareId).bans is list ? shareData(shareId).bans : [];
+    }
+
+    function isBanned(shareId) {
+      return isSignedIn() && request.auth.uid in bans(shareId);
+    }
+
+    function isShareEnabled(shareId) {
+      return !(shareData(shareId).enabled is bool) || shareData(shareId).enabled == true;
+    }
+
+    function canReadShare(shareId) {
+      return isSignedIn() && (isOwner(shareId) || (isShareEnabled(shareId) && !isBanned(shareId)));
+    }
+
+    function hasValidOwnerMember() {
+      return request.resource.data.members is map
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members[request.auth.uid] is map
+        && request.resource.data.members[request.auth.uid].id == request.auth.uid
+        && request.resource.data.members[request.auth.uid].role == "admin";
+    }
+
+    function canCollaboratorUpdateShare(shareId) {
+      return canReadShare(shareId)
+        && !isOwner(shareId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(["payload", "tripId", "updatedAt"])
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.enabled == resource.data.enabled
+        && request.resource.data.passwordHash == resource.data.passwordHash
+        && request.resource.data.bans == resource.data.bans
+        && request.resource.data.members == resource.data.members;
+    }
+
+    function validMessageCreate() {
+      return request.resource.data.keys().hasOnly(["uid", "user", "text", "createdAt"])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.user is string
+        && request.resource.data.user.size() > 0
+        && request.resource.data.user.size() <= 40
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 1000;
+    }
+
+    function validLogCreate() {
+      return request.resource.data.keys().hasOnly(["id", "uid", "user", "action", "clientTs", "createdAt"])
+        && request.resource.data.id is string
+        && request.resource.data.id.size() > 0
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.user is string
+        && request.resource.data.user.size() > 0
+        && request.resource.data.user.size() <= 40
+        && request.resource.data.action is string
+        && request.resource.data.action.size() > 0
+        && request.resource.data.action.size() <= 120
+        && (!("clientTs" in request.resource.data) || request.resource.data.clientTs is int);
+    }
+
+    match /shares/{shareId} {
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.enabled == true
+        && request.resource.data.bans is list
+        && hasValidOwnerMember();
+
+      allow get: if canReadShare(shareId);
+      allow list: if false;
+
+      allow update: if isOwner(shareId) || canCollaboratorUpdateShare(shareId);
+      allow delete: if isOwner(shareId);
+    }
+
+    match /shares/{shareId}/messages/{messageId} {
+      allow get, list: if canReadShare(shareId);
+      allow create: if canReadShare(shareId) && validMessageCreate();
+      allow update, delete: if false;
+    }
+
+    match /shares/{shareId}/logs/{logId} {
+      allow get, list: if canReadShare(shareId);
+      allow create: if canReadShare(shareId) && validLogCreate();
+      allow update, delete: if false;
+    }
+  }
+}

@@ -255,23 +255,6 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
         left: fixedPopupPosition.left,
         width: fixedPopupPosition.width,
       })
-      return
-      const trigger = triggerRef.current
-      if (!trigger) return
-
-      const triggerRect = trigger.getBoundingClientRect()
-      const modal = containerRef.current?.closest("[data-trip-modal]") as HTMLElement | null
-      const modalRect = modal ? modal.getBoundingClientRect() : triggerRect
-      const desiredWidth = 520
-      const gap = 16
-      const padding = 12
-      const viewportWidth = window.innerWidth
-      const rightSpace = viewportWidth - modalRect.right - gap - padding
-      const width = Math.min(desiredWidth, Math.max(320, rightSpace))
-      const left = Math.max(padding, Math.min(modalRect.right + gap, viewportWidth - width - padding))
-      const top = modalRect.top + modalRect.height / 2
-
-      setPopupStyle({ top, left, width })
     }
 
     updatePosition()

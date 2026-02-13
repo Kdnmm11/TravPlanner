@@ -5,13 +5,15 @@ import Link from "next/link"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { Plane, Plus, MoreHorizontal } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
+import { Button } from "@/components/ui/button"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
+import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
   hashPassword,
   setShareEnabled as setShareEnabledRemote,
-  setSharePassword,
+  setSharePassword as setSharePasswordRemote,
   updateShare,
 } from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
@@ -31,9 +33,9 @@ export default function TripChecklistPage() {
     toggleChecklistItem,
     updateChecklistItemCount,
     updateChecklistItem,
+    updateChecklistCategory,
     addChecklistPreset,
     exportTripData,
-    deleteTrip,
     activeShares,
   } = useTravelStore()
   const router = useRouter()
@@ -100,16 +102,10 @@ export default function TripChecklistPage() {
     }
     const nameKey = `trav-share-name:${effectiveShareId}`
     const passKey = `trav-share-pass:${effectiveShareId}`
-    const ownerKey = `trav-share-owner:${effectiveShareId}`
     const storedName = localStorage.getItem(nameKey)
     const storedPass = localStorage.getItem(passKey)
-    const storedOwner = localStorage.getItem(ownerKey)
-    const isOwnerByKey = Boolean(storedOwner && storedOwner === clientId)
     const isOwnerByDoc = Boolean(shareOwnerId && shareOwnerId === clientId)
     if (isOwnerByDoc) {
-      localStorage.setItem(ownerKey, clientId)
-    }
-    if (isOwnerByKey || isOwnerByDoc) {
       setShareName("admin")
       setShareNameOpen(false)
       setIsLocalAdmin(true)
@@ -127,22 +123,26 @@ export default function TripChecklistPage() {
   }, [effectiveShareId, clientId, shareOwnerId])
 
   useEffect(() => {
-    const existing = localStorage.getItem("trav-client-id")
-    if (existing) {
-      setClientId(existing)
-      return
+    let cancelled = false
+    ensureAuthUid()
+      .then((uid) => {
+        if (cancelled) return
+        setClientId(uid)
+        localStorage.setItem("trav-client-id", uid)
+      })
+      .catch((error) => {
+        console.error("Auth init failed", error)
+      })
+    return () => {
+      cancelled = true
     }
-    const next = Math.random().toString(36).slice(2, 10)
-    localStorage.setItem("trav-client-id", next)
-    setClientId(next)
   }, [])
 
   useEffect(() => {
     if (!accessDenied) return
     if (isAdmin) return
-    deleteTrip(id)
     router.replace("/")
-  }, [accessDenied, isAdmin, deleteTrip, id, router])
+  }, [accessDenied, isAdmin, router])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -211,7 +211,7 @@ export default function TripChecklistPage() {
     if (!effectiveShareId || !isAdmin) return
     setShareSettingsError(null)
     if (!sharePasswordEnabled) {
-      await setSharePassword(effectiveShareId, null)
+      await setSharePasswordRemote(effectiveShareId, null)
       localStorage.removeItem(`trav-share-pass:${effectiveShareId}`)
       setSharePasswordHash(null)
       setShareSettingsOpen(false)
@@ -222,7 +222,7 @@ export default function TripChecklistPage() {
       return
     }
     const hash = await hashPassword(sharePasswordNext.trim())
-    await setSharePassword(effectiveShareId, hash)
+    await setSharePasswordRemote(effectiveShareId, hash)
     localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
     setSharePasswordHash(hash)
     setShareSettingsOpen(false)
@@ -257,7 +257,6 @@ export default function TripChecklistPage() {
   const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
     if (!disabled) return
     if (clientId && ownerId && clientId === ownerId) return
-    deleteTrip(id)
     router.replace("/")
   }
 
@@ -369,7 +368,7 @@ export default function TripChecklistPage() {
           <ShareSync
             shareId={effectiveShareId}
             tripId={id}
-            onStatusChange={setShareEnabled}
+            onStatusChange={setShareEnabledState}
             onSync={handleSync}
             onError={setSyncError}
             onLogsChange={setShareLogs}
@@ -1152,7 +1151,7 @@ export default function TripChecklistPage() {
         <ShareSync
           shareId={effectiveShareId}
           tripId={trip.id}
-          onStatusChange={setShareEnabled}
+          onStatusChange={setShareEnabledState}
           onSync={handleSync}
           onError={setSyncError}
           onLogsChange={setShareLogs}
@@ -1181,6 +1180,7 @@ export default function TripChecklistPage() {
         <ShareChatModal
           isOpen={chatOpen}
           shareId={effectiveShareId}
+          clientId={clientId}
           userName={shareName || (isAdmin ? "admin" : "익명")}
           onClose={() => setChatOpen(false)}
         />

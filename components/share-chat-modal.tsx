@@ -7,11 +7,12 @@ import type { ShareMessage } from "@/lib/share"
 interface ShareChatModalProps {
   isOpen: boolean
   shareId: string | null
+  clientId?: string | null
   userName: string
   onClose: () => void
 }
 
-export function ShareChatModal({ isOpen, shareId, userName, onClose }: ShareChatModalProps) {
+export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }: ShareChatModalProps) {
   const [messages, setMessages] = useState<ShareMessage[]>([])
   const [draft, setDraft] = useState("")
   const listRef = useRef<HTMLDivElement>(null)
@@ -29,14 +30,14 @@ export function ShareChatModal({ isOpen, shareId, userName, onClose }: ShareChat
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [messages, isOpen])
 
-  const canSend = useMemo(() => draft.trim().length > 0, [draft])
+  const canSend = useMemo(() => Boolean(clientId) && draft.trim().length > 0, [draft, clientId])
 
   const handleSend = async () => {
     if (!shareId || !canSend) return
     const text = draft.trim()
     setDraft("")
     try {
-      await sendShareMessage(shareId, { user: userName || "익명", text })
+      await sendShareMessage(shareId, { uid: clientId || "", user: userName || "익명", text })
     } catch {
       setDraft(text)
     }

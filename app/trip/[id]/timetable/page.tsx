@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { ArrowRight, Home, MapPin, Plane } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
+import { Button } from "@/components/ui/button"
+import { ensureAuthUid } from "@/lib/firebase"
 import type { Schedule, ScheduleFormData } from "@/lib/types"
 import { ScheduleModal } from "@/components/schedule-modal"
 import { ShareSync } from "@/components/share-sync"
@@ -13,7 +15,7 @@ import {
   banShareMember,
   hashPassword,
   setShareEnabled as setShareEnabledRemote,
-  setSharePassword,
+  setSharePassword as setSharePasswordRemote,
   updateShare,
 } from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
@@ -108,7 +110,7 @@ export default function TripTimeTablePage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const shareId = searchParams.get("share")
-  const { trips, schedules, dayInfos, addSchedule, updateSchedule, exportTripData, deleteTrip, activeShares } = useTravelStore()
+  const { trips, schedules, dayInfos, addSchedule, updateSchedule, exportTripData, activeShares } = useTravelStore()
   const router = useRouter()
   const trip = trips.find((item) => item.id === id)
 
@@ -177,16 +179,10 @@ export default function TripTimeTablePage() {
     }
     const nameKey = `trav-share-name:${effectiveShareId}`
     const passKey = `trav-share-pass:${effectiveShareId}`
-    const ownerKey = `trav-share-owner:${effectiveShareId}`
     const storedName = localStorage.getItem(nameKey)
     const storedPass = localStorage.getItem(passKey)
-    const storedOwner = localStorage.getItem(ownerKey)
-    const isOwnerByKey = Boolean(storedOwner && storedOwner === clientId)
     const isOwnerByDoc = Boolean(shareOwnerId && shareOwnerId === clientId)
     if (isOwnerByDoc) {
-      localStorage.setItem(ownerKey, clientId)
-    }
-    if (isOwnerByKey || isOwnerByDoc) {
       setShareName("admin")
       setShareNameOpen(false)
       setIsLocalAdmin(true)
@@ -204,22 +200,26 @@ export default function TripTimeTablePage() {
   }, [effectiveShareId, clientId, shareOwnerId])
 
   useEffect(() => {
-    const existing = localStorage.getItem("trav-client-id")
-    if (existing) {
-      setClientId(existing)
-      return
+    let cancelled = false
+    ensureAuthUid()
+      .then((uid) => {
+        if (cancelled) return
+        setClientId(uid)
+        localStorage.setItem("trav-client-id", uid)
+      })
+      .catch((error) => {
+        console.error("Auth init failed", error)
+      })
+    return () => {
+      cancelled = true
     }
-    const next = Math.random().toString(36).slice(2, 10)
-    localStorage.setItem("trav-client-id", next)
-    setClientId(next)
   }, [])
 
   useEffect(() => {
     if (!accessDenied) return
     if (isAdmin) return
-    deleteTrip(id)
     router.replace("/")
-  }, [accessDenied, isAdmin, deleteTrip, id, router])
+  }, [accessDenied, isAdmin, router])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -288,7 +288,7 @@ export default function TripTimeTablePage() {
     if (!effectiveShareId || !isAdmin) return
     setShareSettingsError(null)
     if (!sharePasswordEnabled) {
-      await setSharePassword(effectiveShareId, null)
+      await setSharePasswordRemote(effectiveShareId, null)
       localStorage.removeItem(`trav-share-pass:${effectiveShareId}`)
       setSharePasswordHash(null)
       setShareSettingsOpen(false)
@@ -299,7 +299,7 @@ export default function TripTimeTablePage() {
       return
     }
     const hash = await hashPassword(sharePasswordNext.trim())
-    await setSharePassword(effectiveShareId, hash)
+    await setSharePasswordRemote(effectiveShareId, hash)
     localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
     setSharePasswordHash(hash)
     setShareSettingsOpen(false)
@@ -334,7 +334,6 @@ export default function TripTimeTablePage() {
   const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
     if (!disabled) return
     if (clientId && ownerId && clientId === ownerId) return
-    deleteTrip(id)
     router.replace("/")
   }
   const tableHeight = 740
@@ -406,6 +405,7 @@ export default function TripTimeTablePage() {
   }
 
   const handleScheduleSubmit = (data: ScheduleFormData) => {
+    if (!trip) return
     addSchedule(trip.id, selectedDayNumber, data)
   }
 
@@ -453,6 +453,7 @@ export default function TripTimeTablePage() {
   }
 
   const endDrag = () => {
+    if (!trip) return
     if (!dragState || !dragPreview) {
       setDragState(null)
       setDragPreview(null)
@@ -509,6 +510,7 @@ export default function TripTimeTablePage() {
   }
 
   const endResize = () => {
+    if (!trip) return
     if (!resizeState) return
     updateSchedule(trip.id, resizeState.originDay, resizeState.id, {
       endTime: fromMinutes(resizeState.endMinutes),
@@ -568,7 +570,7 @@ export default function TripTimeTablePage() {
           <ShareSync
             shareId={effectiveShareId}
             tripId={id}
-            onStatusChange={setShareEnabled}
+            onStatusChange={setShareEnabledState}
             onSync={handleSync}
             onError={setSyncError}
             onLogsChange={setShareLogs}
@@ -1065,7 +1067,7 @@ export default function TripTimeTablePage() {
         <ShareSync
           shareId={effectiveShareId}
           tripId={trip.id}
-          onStatusChange={setShareEnabled}
+          onStatusChange={setShareEnabledState}
           onSync={handleSync}
           onError={setSyncError}
           onLogsChange={setShareLogs}
@@ -1094,6 +1096,7 @@ export default function TripTimeTablePage() {
         <ShareChatModal
           isOpen={chatOpen}
           shareId={effectiveShareId}
+          clientId={clientId}
           userName={shareName || (isAdmin ? "admin" : "익명")}
           onClose={() => setChatOpen(false)}
         />
