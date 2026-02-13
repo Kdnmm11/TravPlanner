@@ -4,7 +4,7 @@ import { initializeApp, getApps } from "firebase/app"
 import { getAuth, onAuthStateChanged, signInAnonymously, type User } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 
-const firebaseConfig = {
+const legacyFirebaseConfig = {
   apiKey: "AIzaSyAN9ORHaui8p1QqeWikBdrd1wQGRQsWcGc",
   authDomain: "travelplanner-dd3b5.firebaseapp.com",
   projectId: "travelplanner-dd3b5",
@@ -12,6 +12,30 @@ const firebaseConfig = {
   messagingSenderId: "470892635372",
   appId: "1:470892635372:web:2d91e700b802c427c4f1c9",
 }
+
+const envFirebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? "",
+}
+
+const envConfigValues = Object.values(envFirebaseConfig)
+const hasAnyEnvFirebaseConfig = envConfigValues.some((value) => Boolean(value))
+const hasCompleteEnvFirebaseConfig = envConfigValues.every((value) => Boolean(value))
+
+if (hasAnyEnvFirebaseConfig && !hasCompleteEnvFirebaseConfig) {
+  console.warn(
+    "Firebase env vars are partially configured. Set all NEXT_PUBLIC_FIREBASE_* keys or none."
+  )
+}
+
+const firebaseConfig =
+  hasCompleteEnvFirebaseConfig
+    ? envFirebaseConfig
+    : legacyFirebaseConfig
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
 
