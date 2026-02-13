@@ -678,7 +678,7 @@ export default function TripTimeTablePage() {
     <div data-app-shell className="min-h-screen bg-white" style={{ "--sidebar-width": "260px" } as Record<string, string>}>
       <div className="grid grid-cols-[var(--sidebar-width)_minmax(0,1fr)]">
         <aside className="sticky top-0 h-screen border-r border-slate-200 bg-white px-4 py-6">
-          <div className="flex items-center gap-3 px-2 mb-8">
+          <Link href="/" className="mb-8 flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-slate-50">
             <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center">
               <Plane className="w-5 h-5 text-slate-900" />
             </div>
@@ -686,7 +686,7 @@ export default function TripTimeTablePage() {
               <div className="text-sm font-semibold text-slate-900">여행 플래너</div>
               <div className="text-xs text-slate-400">Planner</div>
             </div>
-          </div>
+          </Link>
           <nav className="space-y-4 text-sm">
             <div className="space-y-1">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-2">전체 홈</div>

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Plane, Calendar, Map, Settings, Plus, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -21,12 +22,12 @@ export function TravelSidebar() {
     <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col h-screen">
       {/* Logo */}
       <div className="p-6 border-b border-slate-700">
-        <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3 rounded-lg hover:bg-slate-800 px-1 py-1">
           <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
             <Plane className="w-5 h-5 text-slate-900" />
           </div>
           <span className="text-xl font-semibold">여행 플래너</span>
-        </div>
+        </Link>
       </div>
 
       {/* New Trip Button */}
