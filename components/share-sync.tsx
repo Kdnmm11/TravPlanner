@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { useTravelStore } from "@/lib/store"
 import { addShareLog, subscribeShare, subscribeShareLogs, updateShare, upsertShareMember } from "@/lib/share"
+import { addDebugLog } from "@/lib/debug-log"
 import type { ShareLog, ShareMember, SharePayload } from "@/lib/share"
 
 export function ShareSync({
@@ -50,10 +51,31 @@ export function ShareSync({
   const syncBlockedRef = useRef(false)
   const lastStatusRef = useRef<string | null>(null)
   const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
+  const logSync = (
+    event: string,
+    detail?: string,
+    level: "info" | "warn" | "error" = "info",
+    data?: Record<string, unknown>
+  ) => {
+    addDebugLog({
+      scope: "sync",
+      event,
+      level,
+      detail,
+      data: {
+        shareId,
+        tripId,
+        clientId: clientId ?? null,
+        actorRole,
+        ...(data ?? {}),
+      },
+    })
+  }
 
   const emitStatus = (message: string | null) => {
     if (lastStatusRef.current === message) return
     lastStatusRef.current = message
+    logSync("status", message ?? "ok", message ? "warn" : "info")
     onError?.(message ?? "")
   }
 
@@ -62,8 +84,10 @@ export function ShareSync({
     if (!clientId || isLocalFallbackClient) {
       shareEnabledRef.current = false
       if (!clientId) {
+        logSync("auth-wait", "client id not ready", "warn")
         emitStatus("인증 초기화 중입니다. 잠시 후 다시 시도해 주세요.")
       } else {
+        logSync("auth-fallback", "firebase uid unavailable, local fallback uid in use", "error")
         emitStatus("Firebase 인증 설정 문제로 실시간 동기화를 사용할 수 없습니다.")
       }
       return
@@ -72,6 +96,14 @@ export function ShareSync({
     const unsubscribe = subscribeShare(
       shareId,
       ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
+        logSync("snapshot", undefined, "info", {
+          enabled,
+          hasPayload: Boolean(payload),
+          hasPassword: Boolean(passwordHash),
+          memberCount: Object.keys(members ?? {}).length,
+          bannedCount: (bans ?? []).length,
+          ownerId: ownerId ?? null,
+        })
         syncBlockedRef.current = false
         shareEnabledRef.current = enabled
         onStatusChange?.(enabled)
@@ -93,22 +125,27 @@ export function ShareSync({
           onShareDisabled?.(false, ownerId)
         }
         if (denied) {
+          logSync("access-denied", "client is banned from share", "warn")
           emitStatus("공유 접근이 차단되어 실시간 동기화가 중단되었습니다.")
           return
         }
         if (!enabled) {
+          logSync("share-disabled", "remote share is disabled", "warn")
           emitStatus("공유가 꺼져 있어 실시간 동기화가 중단되었습니다.")
           return
         }
         if (!authed && requiresPassword) {
+          logSync("password-required", "password auth required", "warn")
           emitStatus("공유 비밀번호 인증이 필요합니다.")
           return
         }
         if (!payload) {
+          logSync("payload-pending", "waiting for payload", "warn")
           emitStatus("공유 데이터를 불러오는 중입니다.")
           return
         }
         if (!isValidSharePayload(payload)) {
+          logSync("payload-invalid", "invalid share payload shape", "error")
           emitStatus("공유 데이터 형식 오류")
           return
         }
@@ -118,10 +155,16 @@ export function ShareSync({
           if (incomingSignature === pendingSignature) {
             pendingPayloadSignatureRef.current = null
           } else if (debounceRef.current !== null || pushInFlightRef.current) {
+            logSync("pull-skipped-stale", "ignored stale remote payload while local push pending", "warn")
             return
           }
         }
         emitStatus(null)
+        logSync("pull-apply", "remote payload applied", "info", {
+          schedules: payload.schedules.length,
+          dayInfos: payload.dayInfos.length,
+          checklistItems: payload.checklistItems.length,
+        })
         applyRemoteRef.current = true
         replaceTripData(payload)
         onSync?.("pull")
@@ -132,6 +175,12 @@ export function ShareSync({
       },
       (error) => {
         console.error("Share subscription failed", error)
+        logSync(
+          "subscribe-error",
+          error.code || "unknown",
+          "error",
+          error.message ? { message: error.message } : undefined
+        )
         syncBlockedRef.current = true
         shareEnabledRef.current = false
         if (isAuthErrorCode(error.code) || error.code === "not-found") {
@@ -166,6 +215,12 @@ export function ShareSync({
       100,
       (error) => {
         console.error("Share logs subscription failed", error)
+        logSync(
+          "logs-subscribe-error",
+          error.code || "unknown",
+          "error",
+          error.message ? { message: error.message } : undefined
+        )
       }
     )
     return () => unsubscribe()
@@ -183,14 +238,21 @@ export function ShareSync({
       const payload = exportTripData(tripId)
       if (!payload) return
       pendingPayloadSignatureRef.current = createPayloadSignature(payload)
+      logSync("push-queued", "local changes queued for share update", "info", {
+        schedules: payload.schedules.length,
+        dayInfos: payload.dayInfos.length,
+        checklistItems: payload.checklistItems.length,
+      })
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null
         pushInFlightRef.current = true
+        logSync("push-start", "sending payload to firestore")
         updateShare(shareId, payload)
           .then(() => {
             pushInFlightRef.current = false
             pendingPayloadSignatureRef.current = null
+            logSync("push-success", "payload saved")
             emitStatus(null)
             onSync?.("push")
             const action = describeChange(lastPayloadRef.current, payload)
@@ -223,6 +285,14 @@ export function ShareSync({
               typeof (error as { code?: unknown }).code === "string"
                 ? (error as { code: string }).code
                 : undefined
+            const message =
+              typeof error === "object" &&
+              error !== null &&
+              "message" in error &&
+              typeof (error as { message?: unknown }).message === "string"
+                ? (error as { message: string }).message
+                : undefined
+            logSync("push-error", code || "unknown", "error", message ? { message } : undefined)
             if (isAuthErrorCode(code)) {
               syncBlockedRef.current = true
             }

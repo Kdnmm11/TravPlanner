@@ -14,6 +14,7 @@ import type {
   ScheduleFormData,
   BudgetFormData,
 } from "./types"
+import { addDebugLog } from "./debug-log"
 
 interface TravelStore {
   trips: Trip[]
@@ -306,49 +307,82 @@ export const useTravelStore = create<TravelStore>()(
         }),
 
       addSchedule: (tripId, dayNumber, schedule) =>
-        set((state) => ({
-          schedules: [
-            ...state.schedules,
-            {
-              id: generateId(),
-              tripId,
-              dayNumber,
-              time: schedule.time,
-              endTime: schedule.endTime,
-              title: schedule.title,
-              location: schedule.location,
-              memo: schedule.memo,
-              category: schedule.category,
-              subCategory: schedule.subCategory,
-              amount: 0,
-              currency: "KRW",
-              arrivalPlace: schedule.arrivalPlace,
-              reservationNum: schedule.reservationNum,
-              bookingSource: schedule.bookingSource,
+        set((state) => {
+          const nextSchedule: Schedule = {
+            id: generateId(),
+            tripId,
+            dayNumber,
+            time: schedule.time,
+            endTime: schedule.endTime,
+            title: schedule.title,
+            location: schedule.location,
+            memo: schedule.memo,
+            category: schedule.category,
+            subCategory: schedule.subCategory,
+            amount: 0,
+            currency: "KRW",
+            arrivalPlace: schedule.arrivalPlace,
+            reservationNum: schedule.reservationNum,
+            bookingSource: schedule.bookingSource,
+          }
+          addDebugLog({
+            scope: "store",
+            event: "schedule-add",
+            detail: `trip=${tripId}, day=${dayNumber}, id=${nextSchedule.id}`,
+            data: {
+              title: nextSchedule.title,
+              time: nextSchedule.time,
+              endTime: nextSchedule.endTime,
+              location: nextSchedule.location,
+              category: nextSchedule.category,
             },
-          ],
-        })),
+          })
+          return {
+            schedules: [...state.schedules, nextSchedule],
+          }
+        }),
 
       updateSchedule: (tripId, dayNumber, scheduleId, updates) =>
-        set((state) => ({
-          schedules: state.schedules.map((schedule) =>
-            schedule.id === scheduleId && schedule.tripId === tripId && schedule.dayNumber === dayNumber
-              ? { ...schedule, ...updates }
-              : schedule
-          ),
-        })),
+        set((state) => {
+          let changed = false
+          const schedules = state.schedules.map((schedule) => {
+            if (schedule.id === scheduleId && schedule.tripId === tripId && schedule.dayNumber === dayNumber) {
+              changed = true
+              return { ...schedule, ...updates }
+            }
+            return schedule
+          })
+          if (changed) {
+            addDebugLog({
+              scope: "store",
+              event: "schedule-update",
+              detail: `trip=${tripId}, day=${dayNumber}, id=${scheduleId}`,
+              data: updates,
+            })
+          }
+          return { schedules }
+        }),
 
       deleteSchedule: (tripId, dayNumber, scheduleId) =>
-        set((state) => ({
-          schedules: state.schedules.filter(
+        set((state) => {
+          const before = state.schedules.length
+          const schedules = state.schedules.filter(
             (schedule) =>
               !(
                 schedule.id === scheduleId &&
                 schedule.tripId === tripId &&
                 schedule.dayNumber === dayNumber
               )
-          ),
-        })),
+          )
+          if (schedules.length !== before) {
+            addDebugLog({
+              scope: "store",
+              event: "schedule-delete",
+              detail: `trip=${tripId}, day=${dayNumber}, id=${scheduleId}`,
+            })
+          }
+          return { schedules }
+        }),
 
       updateDayInfo: (tripId, dayNumber, updates) =>
         set((state) => {
@@ -689,6 +723,17 @@ export const useTravelStore = create<TravelStore>()(
           const existingCategoryIds = new Set(
             state.checklistCategories.filter((category) => category.tripId === tripId).map((category) => category.id)
           )
+          const prevScheduleCount = state.schedules.filter((schedule) => schedule.tripId === tripId).length
+          addDebugLog({
+            scope: "store",
+            event: "replace-trip-data",
+            detail: `trip=${tripId}, schedules:${prevScheduleCount}->${payload.schedules.length}`,
+            data: {
+              dayInfos: payload.dayInfos.length,
+              checklistCategories: payload.checklistCategories.length,
+              checklistItems: payload.checklistItems.length,
+            },
+          })
 
           return {
             trips: existingTrip
