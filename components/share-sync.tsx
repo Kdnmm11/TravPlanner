@@ -45,52 +45,77 @@ export function ShareSync({
   const lastPayloadRef = useRef<SharePayload | null>(null)
   const lastLogRef = useRef<{ action: string; time: number } | null>(null)
   const accessDeniedRef = useRef(false)
+  const syncBlockedRef = useRef(false)
+  const localAuthWarningShownRef = useRef(false)
+  const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
 
   useEffect(() => {
     if (!shareId) return
-    const unsubscribe = subscribeShare(shareId, ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
-      shareEnabledRef.current = enabled
-      onStatusChange?.(enabled)
-      onMembersChange?.(Object.values(members ?? {}), ownerId)
-      const requiresPassword = Boolean(passwordHash)
-      passwordRequiredRef.current = requiresPassword
-      const isAdmin = actorRole === "admin"
-      const authed =
-        !requiresPassword ||
-        (localPasswordHash && localPasswordHash === passwordHash) ||
-        isAdmin
-      onAuthRequired?.(!authed && requiresPassword)
-      const denied = clientId ? (bans ?? []).includes(clientId) : false
-      accessDeniedRef.current = denied
-      onAccessDenied?.(denied)
-      if (!enabled) {
-        onShareDisabled?.(true, ownerId)
-      } else {
-        onShareDisabled?.(false, ownerId)
+    if (!clientId || isLocalFallbackClient) {
+      shareEnabledRef.current = false
+      if (isLocalFallbackClient && !localAuthWarningShownRef.current) {
+        localAuthWarningShownRef.current = true
+        onError?.("인증 설정 문제로 공유 동기화를 사용할 수 없습니다.")
       }
-      if (denied || !authed || !enabled || !payload) return
-      if (!isValidSharePayload(payload)) {
-        onError?.("공유 데이터 형식 오류")
-        return
+      return
+    }
+    localAuthWarningShownRef.current = false
+    syncBlockedRef.current = false
+    const unsubscribe = subscribeShare(
+      shareId,
+      ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
+        syncBlockedRef.current = false
+        shareEnabledRef.current = enabled
+        onStatusChange?.(enabled)
+        onMembersChange?.(Object.values(members ?? {}), ownerId)
+        const requiresPassword = Boolean(passwordHash)
+        passwordRequiredRef.current = requiresPassword
+        const isAdmin = actorRole === "admin"
+        const authed =
+          !requiresPassword ||
+          (localPasswordHash && localPasswordHash === passwordHash) ||
+          isAdmin
+        onAuthRequired?.(!authed && requiresPassword)
+        const denied = clientId ? (bans ?? []).includes(clientId) : false
+        accessDeniedRef.current = denied
+        onAccessDenied?.(denied)
+        if (!enabled) {
+          onShareDisabled?.(true, ownerId)
+        } else {
+          onShareDisabled?.(false, ownerId)
+        }
+        if (denied || !authed || !enabled || !payload) return
+        if (!isValidSharePayload(payload)) {
+          onError?.("공유 데이터 형식 오류")
+          return
+        }
+        applyRemoteRef.current = true
+        replaceTripData(payload)
+        onSync?.("pull")
+        lastPayloadRef.current = payload
+        window.setTimeout(() => {
+          applyRemoteRef.current = false
+        }, 0)
+      },
+      (error) => {
+        console.error("Share subscription failed", error)
+        syncBlockedRef.current = true
+        shareEnabledRef.current = false
+        onError?.(toShareErrorMessage(error.code))
       }
-      applyRemoteRef.current = true
-      replaceTripData(payload)
-      onSync?.("pull")
-      lastPayloadRef.current = payload
-      window.setTimeout(() => {
-        applyRemoteRef.current = false
-      }, 0)
-    })
+    )
     return () => unsubscribe()
   }, [
     shareId,
+    clientId,
+    isLocalFallbackClient,
+    actorRole,
     replaceTripData,
     onStatusChange,
     onSync,
     localPasswordHash,
     onAuthRequired,
     onMembersChange,
-    clientId,
     onAccessDenied,
     onShareDisabled,
     onError,
@@ -98,14 +123,24 @@ export function ShareSync({
 
   useEffect(() => {
     if (!shareId || !onLogsChange) return
-    const unsubscribe = subscribeShareLogs(shareId, onLogsChange, 100)
+    if (!clientId || isLocalFallbackClient) return
+    const unsubscribe = subscribeShareLogs(
+      shareId,
+      onLogsChange,
+      100,
+      (error) => {
+        console.error("Share logs subscription failed", error)
+      }
+    )
     return () => unsubscribe()
-  }, [shareId, onLogsChange])
+  }, [shareId, onLogsChange, clientId, isLocalFallbackClient])
 
   useEffect(() => {
     if (!shareId || !tripId) return
+    if (!clientId || isLocalFallbackClient) return
     const unsubscribe = useTravelStore.subscribe(() => {
       if (applyRemoteRef.current) return
+      if (syncBlockedRef.current) return
       if (!shareEnabledRef.current) return
       if (passwordRequiredRef.current && !localPasswordHash && actorRole !== "admin") return
       if (accessDeniedRef.current) return
@@ -137,7 +172,17 @@ export function ShareSync({
           })
           .catch((error) => {
             console.error("Share update failed", error)
-            onError?.("업로드 실패")
+            const code =
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              typeof (error as { code?: unknown }).code === "string"
+                ? (error as { code: string }).code
+                : undefined
+            if (isAuthErrorCode(code)) {
+              syncBlockedRef.current = true
+            }
+            onError?.(toShareErrorMessage(code))
           })
       }, 100)
     })
@@ -147,11 +192,11 @@ export function ShareSync({
         window.clearTimeout(debounceRef.current)
       }
     }
-  }, [shareId, tripId, exportTripData])
+  }, [shareId, tripId, exportTripData, localPasswordHash, actorRole, clientId, actorName, onSync, onError, isLocalFallbackClient])
 
   useEffect(() => {
     if (actorRole !== "admin") return
-    if (!shareId || !clientId || !actorName) return
+    if (!shareId || !clientId || !actorName || isLocalFallbackClient) return
     const member: ShareMember = {
       id: clientId,
       name: actorName,
@@ -162,7 +207,7 @@ export function ShareSync({
       upsertShareMember(shareId, member).catch(() => undefined)
     }, 15000)
     return () => window.clearInterval(interval)
-  }, [shareId, clientId, actorName, actorRole])
+  }, [shareId, clientId, actorName, actorRole, isLocalFallbackClient])
 
   return null
 }
@@ -203,4 +248,18 @@ function isValidSharePayload(payload: unknown): payload is SharePayload {
     Array.isArray(candidate.checklistItems) &&
     Array.isArray(candidate.exchangeRates)
   )
+}
+
+function isAuthErrorCode(code?: string) {
+  return code === "permission-denied" || code === "unauthenticated"
+}
+
+function toShareErrorMessage(code?: string) {
+  if (isAuthErrorCode(code)) {
+    return "공유 권한이 없어 동기화에 실패했습니다."
+  }
+  if (code === "not-found") {
+    return "공유 문서를 찾을 수 없습니다."
+  }
+  return "업로드 실패"
 }

@@ -290,6 +290,14 @@ export default function TripDetailPage() {
             }}
             localPasswordHash={sharePasswordHash}
             actorName={shareName || "익명"}
+            clientId={clientId}
+            actorRole={isAdmin ? "admin" : "member"}
+            onMembersChange={(members, ownerId) => {
+              setShareMembers(members)
+              setShareOwnerId(ownerId ?? null)
+            }}
+            onAccessDenied={(denied) => setAccessDenied(denied)}
+            onShareDisabled={handleShareDisabled}
           />
         </div>
 

@@ -6,6 +6,7 @@ import {
   collection,
   deleteField,
   doc,
+  type FirestoreError,
   limit,
   onSnapshot,
   orderBy,
@@ -161,41 +162,55 @@ export function subscribeShare(
     members?: Record<string, ShareMember>
     bans?: string[]
     ownerId?: string | null
-  }) => void
+  }) => void,
+  onError?: (error: FirestoreError) => void
 ) {
-  return onSnapshot(doc(db, "shares", shareId), (snapshot) => {
-    const data = snapshot.data()
-    const enabled = data?.enabled !== false
-    onData({
-      payload: data?.payload as SharePayload | undefined,
-      enabled,
-      passwordHash: data?.passwordHash ?? null,
-      members: (data?.members as Record<string, ShareMember>) ?? {},
-      bans: (data?.bans as string[]) ?? [],
-      ownerId: data?.ownerId ?? null,
-    })
-  })
+  return onSnapshot(
+    doc(db, "shares", shareId),
+    (snapshot) => {
+      const data = snapshot.data()
+      const enabled = data?.enabled !== false
+      onData({
+        payload: data?.payload as SharePayload | undefined,
+        enabled,
+        passwordHash: data?.passwordHash ?? null,
+        members: (data?.members as Record<string, ShareMember>) ?? {},
+        bans: (data?.bans as string[]) ?? [],
+        ownerId: data?.ownerId ?? null,
+      })
+    },
+    (error) => {
+      onError?.(error)
+    }
+  )
 }
 
 export function subscribeShareLogs(
   shareId: string,
   onData: (logs: ShareLog[]) => void,
-  maxLogs = 100
+  maxLogs = 100,
+  onError?: (error: FirestoreError) => void
 ) {
   const logsQuery = query(
     collection(db, "shares", shareId, "logs"),
     orderBy("createdAt", "desc"),
     limit(maxLogs)
   )
-  return onSnapshot(logsQuery, (snapshot) => {
-    const logs = snapshot.docs
-      .map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<ShareLog, "id">),
-      }))
-      .reverse()
-    onData(logs)
-  })
+  return onSnapshot(
+    logsQuery,
+    (snapshot) => {
+      const logs = snapshot.docs
+        .map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ShareLog, "id">),
+        }))
+        .reverse()
+      onData(logs)
+    },
+    (error) => {
+      onError?.(error)
+    }
+  )
 }
 
 export async function hashPassword(value: string) {
@@ -215,18 +230,27 @@ export async function sendShareMessage(shareId: string, message: Omit<ShareMessa
 export function subscribeShareMessages(
   shareId: string,
   onData: (messages: ShareMessage[]) => void,
-  maxMessages = 200
+  maxMessages = 200,
+  onError?: (error: FirestoreError) => void
 ) {
   const q = query(
     collection(db, "shares", shareId, "messages"),
     orderBy("createdAt", "desc"),
     limit(maxMessages)
   )
-  return onSnapshot(q, (snapshot) => {
-    const messages = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<ShareMessage, "id">),
-    })).reverse()
-    onData(messages)
-  })
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const messages = snapshot.docs
+        .map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ShareMessage, "id">),
+        }))
+        .reverse()
+      onData(messages)
+    },
+    (error) => {
+      onError?.(error)
+    }
+  )
 }

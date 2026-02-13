@@ -253,6 +253,7 @@ export function ScheduleModal({
   const [category, setCategory] = useState<ScheduleCategory>("other")
   const [subCategory, setSubCategory] = useState("")
   const [showEndTime, setShowEndTime] = useState(false)
+  const [titleError, setTitleError] = useState("")
 
   const [transDepDay, setTransDepDay] = useState(`Day ${currentDayNumber}`)
   const [transDepTime, setTransDepTime] = useState("")
@@ -288,6 +289,7 @@ export function ScheduleModal({
         setTransArrDay(parsedArr.day)
         setTransArrTime(parsedArr.time)
       }
+      setTitleError("")
     } else {
       setTime("")
       setEndTime("")
@@ -303,6 +305,7 @@ export function ScheduleModal({
       setTransDepTime("")
       setTransArrDay(`Day ${currentDayNumber}`)
       setTransArrTime("")
+      setTitleError("")
     }
   }, [initialData, mode, isOpen])
 
@@ -310,7 +313,11 @@ export function ScheduleModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) return
+    if (!title.trim()) {
+      setTitleError("일정 제목을 입력해 주세요.")
+      return
+    }
+    setTitleError("")
 
     if (category === "transport") {
       const depTime = transDepTime
@@ -383,10 +390,14 @@ export function ScheduleModal({
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value)
+                if (titleError) setTitleError("")
+              }}
               placeholder="센소지 관람"
               className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
             />
+            {titleError && <div className="mt-1 text-xs font-semibold text-red-500">{titleError}</div>}
           </div>
           
           <div>

@@ -16,12 +16,20 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
   const [messages, setMessages] = useState<ShareMessage[]>([])
   const [draft, setDraft] = useState("")
   const listRef = useRef<HTMLDivElement>(null)
+  const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
 
   useEffect(() => {
     if (!isOpen || !shareId) return
-    const unsubscribe = subscribeShareMessages(shareId, (items) => {
-      setMessages(items)
-    })
+    const unsubscribe = subscribeShareMessages(
+      shareId,
+      (items) => {
+        setMessages(items)
+      },
+      200,
+      (error) => {
+        console.error("Share chat subscription failed", error)
+      }
+    )
     return () => unsubscribe()
   }, [isOpen, shareId])
 
@@ -30,7 +38,10 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [messages, isOpen])
 
-  const canSend = useMemo(() => Boolean(clientId) && draft.trim().length > 0, [draft, clientId])
+  const canSend = useMemo(
+    () => Boolean(clientId) && !isLocalFallbackClient && draft.trim().length > 0,
+    [draft, clientId, isLocalFallbackClient]
+  )
 
   const handleSend = async () => {
     if (!shareId || !canSend) return
@@ -87,6 +98,7 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
                 handleSend()
               }
             }}
+            disabled={isLocalFallbackClient}
           />
           <button
             type="button"
@@ -97,6 +109,11 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
             전송
           </button>
         </div>
+        {isLocalFallbackClient && (
+          <div className="mt-2 text-[11px] font-semibold text-red-500">
+            인증 설정 문제로 채팅 전송을 사용할 수 없습니다.
+          </div>
+        )}
       </div>
     </div>
   )
