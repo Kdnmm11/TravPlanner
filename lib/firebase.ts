@@ -45,6 +45,11 @@ export const auth = getAuth(app)
 let authUidPromise: Promise<string> | null = null
 const LOCAL_CLIENT_ID_KEY = "trav-client-id"
 
+function persistClientId(value: string) {
+  if (typeof window === "undefined") return
+  localStorage.setItem(LOCAL_CLIENT_ID_KEY, value)
+}
+
 function readOrCreateLocalClientId() {
   if (typeof window === "undefined") {
     return `local-${Math.random().toString(36).slice(2, 10)}`
@@ -52,12 +57,15 @@ function readOrCreateLocalClientId() {
   const existing = localStorage.getItem(LOCAL_CLIENT_ID_KEY)
   if (existing?.startsWith("local-")) return existing
   const next = `local-${Math.random().toString(36).slice(2, 10)}`
-  localStorage.setItem(LOCAL_CLIENT_ID_KEY, next)
+  persistClientId(next)
   return next
 }
 
 export async function ensureAuthUid() {
-  if (auth.currentUser?.uid) return auth.currentUser.uid
+  if (auth.currentUser?.uid) {
+    persistClientId(auth.currentUser.uid)
+    return auth.currentUser.uid
+  }
   if (!authUidPromise) {
     authUidPromise = (async () => {
       try {
@@ -77,9 +85,13 @@ export async function ensureAuthUid() {
             finish(auth.currentUser)
           }, 1200)
         })
-        if (user?.uid) return user.uid
+        if (user?.uid) {
+          persistClientId(user.uid)
+          return user.uid
+        }
 
         const credential = await signInAnonymously(auth)
+        persistClientId(credential.user.uid)
         return credential.user.uid
       } catch (error) {
         console.warn("Anonymous auth unavailable, falling back to local client id", error)
