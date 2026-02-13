@@ -1029,11 +1029,13 @@ export default function TripTimeTablePage() {
                                     </div>
                                     <div className="mt-1 text-sm font-semibold text-slate-900">{schedule.title}</div>
                                     <div className="mt-2 text-[11px] text-slate-500">
-                                      {schedule.category === "transport" && schedule.arrivalPlace
-                                        ? `${schedule.location} > ${schedule.arrivalPlace}`
-                                        : schedule.location || "장소 미정"}
+                                      {schedule.category === "transport" && schedule.arrivalPlace?.trim()
+                                        ? `${(schedule.location ?? "").trim()} > ${schedule.arrivalPlace.trim()}`
+                                        : (schedule.location ?? "").trim() || "장소 미정"}
                                     </div>
-                                    <div className="mt-2 text-[11px] text-slate-400">{schedule.memo || "메모 없음"}</div>
+                                    <div className="mt-2 text-[11px] text-slate-400">
+                                      {(schedule.memo ?? "").trim() || "메모 없음"}
+                                    </div>
                                   </div>
                                 </div>
                               )

@@ -26,7 +26,7 @@ function readOrCreateLocalClientId() {
     return `local-${Math.random().toString(36).slice(2, 10)}`
   }
   const existing = localStorage.getItem(LOCAL_CLIENT_ID_KEY)
-  if (existing) return existing
+  if (existing?.startsWith("local-")) return existing
   const next = `local-${Math.random().toString(36).slice(2, 10)}`
   localStorage.setItem(LOCAL_CLIENT_ID_KEY, next)
   return next

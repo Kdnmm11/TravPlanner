@@ -54,10 +54,13 @@ export function ScheduleCard({
   onEdit,
   onDelete,
 }: ScheduleCardProps) {
+  const normalizedLocation = (location ?? "").trim()
+  const normalizedArrivalPlace = arrivalPlace?.trim() ?? ""
+  const normalizedMemo = memo?.trim() ?? ""
   const locationText =
-    category === "transport" && arrivalPlace
-      ? `${location} > ${arrivalPlace}`
-      : location
+    category === "transport" && normalizedArrivalPlace
+      ? `${normalizedLocation} > ${normalizedArrivalPlace}`
+      : normalizedLocation
 
   const accentClass = getAccentClass(category, `${time}-${title}`)
   const [expanded, setExpanded] = useState(false)
@@ -115,7 +118,7 @@ export function ScheduleCard({
           )}
         </div>
         <div className="mt-1 font-semibold text-slate-500" style={{ fontSize: detailFont }}>
-          {memo ? memo : "메모 없음"}
+          {normalizedMemo || "메모 없음"}
         </div>
         <div className="mt-2 flex justify-end">
           <button
