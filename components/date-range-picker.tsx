@@ -251,18 +251,23 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
       const width = Math.min(520, window.innerWidth - viewportPadding * 2)
       const popupHeight = popupRef.current?.offsetHeight ?? 0
 
-      const canPlaceOnRight =
-        modalRect !== null && modalRect.right + popupGap + width <= window.innerWidth - viewportPadding
-
-      const canPlaceOnLeft =
-        modalRect !== null && modalRect.left - popupGap - width >= viewportPadding
-
       let left = 0
       let top = 0
 
-      if (modalRect && (canPlaceOnRight || canPlaceOnLeft)) {
+      if (modalRect) {
         const rect = modalRect
-        left = canPlaceOnRight ? rect.right + popupGap : rect.left - width - popupGap
+        const preferredRightLeft = rect.right + popupGap
+        const preferredLeftLeft = rect.left - width - popupGap
+        const maxLeft = window.innerWidth - width - viewportPadding
+
+        if (preferredRightLeft <= maxLeft) {
+          left = preferredRightLeft
+        } else if (preferredLeftLeft >= viewportPadding) {
+          left = preferredLeftLeft
+        } else {
+          left = Math.max(viewportPadding, Math.min(maxLeft, rect.right - width * 0.28))
+        }
+
         const centeredTop = rect.top + (rect.height - popupHeight) / 2
         top = Math.max(
           viewportPadding,
