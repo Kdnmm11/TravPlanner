@@ -245,17 +245,41 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
       const trigger = triggerRef.current
       if (!trigger || typeof window === "undefined") return
 
-      const rect = trigger.getBoundingClientRect()
+      const triggerRect = trigger.getBoundingClientRect()
+      const modal = trigger.closest("[data-trip-modal]")
+      const modalRect = modal instanceof HTMLElement ? modal.getBoundingClientRect() : null
       const width = Math.min(520, window.innerWidth - viewportPadding * 2)
       const popupHeight = popupRef.current?.offsetHeight ?? 0
 
-      let left = rect.left + rect.width / 2 - width / 2
-      left = Math.max(viewportPadding, Math.min(left, window.innerWidth - width - viewportPadding))
+      const canPlaceOnRight =
+        modalRect !== null && modalRect.right + popupGap + width <= window.innerWidth - viewportPadding
 
-      const belowTop = rect.bottom + popupGap
-      const aboveTop = rect.top - popupHeight - popupGap
-      const shouldPlaceAbove = popupHeight > 0 && belowTop + popupHeight > window.innerHeight - viewportPadding && aboveTop >= viewportPadding
-      const top = shouldPlaceAbove ? aboveTop : Math.max(viewportPadding, belowTop)
+      const canPlaceOnLeft =
+        modalRect !== null && modalRect.left - popupGap - width >= viewportPadding
+
+      let left = 0
+      let top = 0
+
+      if (modalRect && (canPlaceOnRight || canPlaceOnLeft)) {
+        const rect = modalRect
+        left = canPlaceOnRight ? rect.right + popupGap : rect.left - width - popupGap
+        const centeredTop = rect.top + (rect.height - popupHeight) / 2
+        top = Math.max(
+          viewportPadding,
+          Math.min(centeredTop, window.innerHeight - popupHeight - viewportPadding)
+        )
+      } else {
+        left = triggerRect.left + triggerRect.width / 2 - width / 2
+        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - width - viewportPadding))
+
+        const belowTop = triggerRect.bottom + popupGap
+        const aboveTop = triggerRect.top - popupHeight - popupGap
+        const shouldPlaceAbove =
+          popupHeight > 0 &&
+          belowTop + popupHeight > window.innerHeight - viewportPadding &&
+          aboveTop >= viewportPadding
+        top = shouldPlaceAbove ? aboveTop : Math.max(viewportPadding, belowTop)
+      }
 
       setPopupStyle((prev) => {
         if (prev.top === top && prev.left === left && prev.width === width) {
