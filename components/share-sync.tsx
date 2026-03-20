@@ -47,6 +47,7 @@ export function ShareSync({
   const passwordRequiredRef = useRef(false)
   const lastPayloadRef = useRef<SharePayload | null>(null)
   const lastLogRef = useRef<{ action: string; time: number } | null>(null)
+  const lastSnapshotSignatureRef = useRef<string | null>(null)
   const accessDeniedRef = useRef(false)
   const syncBlockedRef = useRef(false)
   const lastStatusRef = useRef<string | null>(null)
@@ -93,9 +94,22 @@ export function ShareSync({
       return
     }
     syncBlockedRef.current = false
+    lastSnapshotSignatureRef.current = null
     const unsubscribe = subscribeShare(
       shareId,
       ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
+        const snapshotSignature = createSnapshotSignature({
+          payload,
+          enabled,
+          passwordHash,
+          members,
+          bans,
+          ownerId,
+        })
+        if (lastSnapshotSignatureRef.current === snapshotSignature) {
+          return
+        }
+        lastSnapshotSignatureRef.current = snapshotSignature
         logSync("snapshot", undefined, "info", {
           enabled,
           hasPayload: Boolean(payload),
@@ -372,6 +386,39 @@ function isValidSharePayload(payload: unknown): payload is SharePayload {
 
 function createPayloadSignature(payload: SharePayload) {
   return JSON.stringify(payload)
+}
+
+function createSnapshotSignature({
+  payload,
+  enabled,
+  passwordHash,
+  members,
+  bans,
+  ownerId,
+}: {
+  payload?: SharePayload
+  enabled: boolean
+  passwordHash?: string | null
+  members?: Record<string, ShareMember>
+  bans?: string[]
+  ownerId?: string | null
+}) {
+  const memberSummary = Object.values(members ?? {})
+    .map((member) => ({
+      id: member.id,
+      name: member.name,
+      role: member.role,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  const bannedIds = [...(bans ?? [])].sort()
+  return JSON.stringify({
+    enabled,
+    passwordHash: passwordHash ?? null,
+    ownerId: ownerId ?? null,
+    payload: payload ? createPayloadSignature(payload) : null,
+    members: memberSummary,
+    bans: bannedIds,
+  })
 }
 
 function isAuthErrorCode(code?: string) {
