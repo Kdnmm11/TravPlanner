@@ -3,6 +3,7 @@
 import React from "react"
 
 import { useRef, useState, useEffect } from "react"
+import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DraggablePanel } from "@/components/draggable-panel"
 import type { ScheduleFormData, ScheduleCategory } from "@/lib/types"
@@ -49,6 +50,8 @@ const currencyOptions = [
   { code: "VND", label: "동" },
   { code: "PHP", label: "페소" },
 ] as const
+
+type CurrencyOption = (typeof currencyOptions)[number]
 
 const dayOptions = (duration: number) =>
   Array.from({ length: duration }, (_, index) => `Day ${index + 1}`)
@@ -258,6 +261,80 @@ function TimeInputPopover({
             >
               확인
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CurrencyPickerPopover({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const selectedOption =
+    currencyOptions.find((option) => option.code === value) ?? currencyOptions[0]
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (containerRef.current && !containerRef.current.contains(target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between rounded-lg bg-slate-100 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+      >
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-900">
+            {selectedOption.code}
+          </div>
+          <div className="truncate text-[11px] text-slate-500">
+            {selectedOption.label}
+          </div>
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-md">
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {currencyOptions.map((option) => {
+              const selected = option.code === value
+              return (
+                <button
+                  key={option.code}
+                  type="button"
+                  onClick={() => {
+                    onChange(option.code)
+                    setOpen(false)
+                  }}
+                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                    selected
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold">{option.code}</div>
+                  <div className="text-[11px] text-slate-500">{option.label}</div>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -686,17 +763,10 @@ export function ScheduleModal({
                 placeholder="0"
                 className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-right text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
               />
-              <select
+              <CurrencyPickerPopover
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value)}
-                className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-              >
-                {currencyOptions.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.code} · {option.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setCurrency}
+              />
             </div>
           </div>
           
