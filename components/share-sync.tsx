@@ -52,12 +52,61 @@ export function ShareSync({
   const syncBlockedRef = useRef(false)
   const lastStatusRef = useRef<string | null>(null)
   const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
+  const latestRef = useRef({
+    exportTripData,
+    replaceTripData,
+    onStatusChange,
+    onSync,
+    onError,
+    localPasswordHash,
+    onAuthRequired,
+    actorName,
+    clientId,
+    actorRole,
+    onMembersChange,
+    onAccessDenied,
+    onShareDisabled,
+  })
+
+  useEffect(() => {
+    latestRef.current = {
+      exportTripData,
+      replaceTripData,
+      onStatusChange,
+      onSync,
+      onError,
+      localPasswordHash,
+      onAuthRequired,
+      actorName,
+      clientId,
+      actorRole,
+      onMembersChange,
+      onAccessDenied,
+      onShareDisabled,
+    }
+  }, [
+    exportTripData,
+    replaceTripData,
+    onStatusChange,
+    onSync,
+    onError,
+    localPasswordHash,
+    onAuthRequired,
+    actorName,
+    clientId,
+    actorRole,
+    onMembersChange,
+    onAccessDenied,
+    onShareDisabled,
+  ])
+
   const logSync = (
     event: string,
     detail?: string,
     level: "info" | "warn" | "error" = "info",
     data?: Record<string, unknown>
   ) => {
+    const latest = latestRef.current
     addDebugLog({
       scope: "sync",
       event,
@@ -66,8 +115,8 @@ export function ShareSync({
       data: {
         shareId,
         tripId,
-        clientId: clientId ?? null,
-        actorRole,
+        clientId: latest.clientId ?? null,
+        actorRole: latest.actorRole,
         ...(data ?? {}),
       },
     })
@@ -77,7 +126,7 @@ export function ShareSync({
     if (lastStatusRef.current === message) return
     lastStatusRef.current = message
     logSync("status", message ?? "ok", message ? "warn" : "info")
-    onError?.(message ?? "")
+    latestRef.current.onError?.(message ?? "")
   }
 
   useEffect(() => {
@@ -98,6 +147,7 @@ export function ShareSync({
     const unsubscribe = subscribeShare(
       shareId,
       ({ payload, enabled, passwordHash, members, bans, ownerId }) => {
+        const latest = latestRef.current
         const snapshotSignature = createSnapshotSignature({
           payload,
           enabled,
@@ -120,23 +170,23 @@ export function ShareSync({
         })
         syncBlockedRef.current = false
         shareEnabledRef.current = enabled
-        onStatusChange?.(enabled)
-        onMembersChange?.(Object.values(members ?? {}), ownerId)
+        latest.onStatusChange?.(enabled)
+        latest.onMembersChange?.(Object.values(members ?? {}), ownerId)
         const requiresPassword = Boolean(passwordHash)
         passwordRequiredRef.current = requiresPassword
-        const isAdmin = actorRole === "admin"
+        const isAdmin = latest.actorRole === "admin"
         const authed =
           !requiresPassword ||
-          (localPasswordHash && localPasswordHash === passwordHash) ||
+          (latest.localPasswordHash && latest.localPasswordHash === passwordHash) ||
           isAdmin
-        onAuthRequired?.(!authed && requiresPassword)
-        const denied = clientId ? (bans ?? []).includes(clientId) : false
+        latest.onAuthRequired?.(!authed && requiresPassword)
+        const denied = latest.clientId ? (bans ?? []).includes(latest.clientId) : false
         accessDeniedRef.current = denied
-        onAccessDenied?.(denied)
+        latest.onAccessDenied?.(denied)
         if (!enabled) {
-          onShareDisabled?.(true, ownerId)
+          latest.onShareDisabled?.(true, ownerId)
         } else {
-          onShareDisabled?.(false, ownerId)
+          latest.onShareDisabled?.(false, ownerId)
         }
         if (denied) {
           logSync("access-denied", "client is banned from share", "warn")
@@ -173,6 +223,13 @@ export function ShareSync({
             return
           }
         }
+        const currentLocalPayload = latest.exportTripData(tripId)
+        if (currentLocalPayload && createPayloadSignature(currentLocalPayload) === incomingSignature) {
+          lastPayloadRef.current = payload
+          emitStatus(null)
+          logSync("pull-skipped-unchanged", "remote payload already matches local state")
+          return
+        }
         emitStatus(null)
         logSync("pull-apply", "remote payload applied", "info", {
           schedules: payload.schedules.length,
@@ -180,8 +237,8 @@ export function ShareSync({
           checklistItems: payload.checklistItems.length,
         })
         applyRemoteRef.current = true
-        replaceTripData(payload)
-        onSync?.("pull")
+        latest.replaceTripData(payload)
+        latest.onSync?.("pull")
         lastPayloadRef.current = payload
         window.setTimeout(() => {
           applyRemoteRef.current = false
@@ -198,7 +255,7 @@ export function ShareSync({
         syncBlockedRef.current = true
         shareEnabledRef.current = false
         if (isAuthErrorCode(error.code) || error.code === "not-found") {
-          onShareDisabled?.(true, null)
+          latestRef.current.onShareDisabled?.(true, null)
         }
         emitStatus(toShareErrorMessage(error.code))
       }
@@ -208,16 +265,7 @@ export function ShareSync({
     shareId,
     clientId,
     isLocalFallbackClient,
-    actorRole,
-    replaceTripData,
-    onStatusChange,
-    onSync,
-    localPasswordHash,
-    onAuthRequired,
-    onMembersChange,
-    onAccessDenied,
-    onShareDisabled,
-    onError,
+    tripId,
   ])
 
   useEffect(() => {
@@ -244,12 +292,13 @@ export function ShareSync({
     if (!shareId || !tripId) return
     if (!clientId || isLocalFallbackClient) return
     const unsubscribe = useTravelStore.subscribe(() => {
+      const latest = latestRef.current
       if (applyRemoteRef.current) return
       if (syncBlockedRef.current) return
       if (!shareEnabledRef.current) return
-      if (passwordRequiredRef.current && !localPasswordHash && actorRole !== "admin") return
+      if (passwordRequiredRef.current && !latest.localPasswordHash && latest.actorRole !== "admin") return
       if (accessDeniedRef.current) return
-      const payload = exportTripData(tripId)
+      const payload = latest.exportTripData(tripId)
       if (!payload) return
       pendingPayloadSignatureRef.current = createPayloadSignature(payload)
       logSync("push-queued", "local changes queued for share update", "info", {
@@ -268,17 +317,17 @@ export function ShareSync({
             pendingPayloadSignatureRef.current = null
             logSync("push-success", "payload saved")
             emitStatus(null)
-            onSync?.("push")
+            latest.onSync?.("push")
             const action = describeChange(lastPayloadRef.current, payload)
             if (action) {
               const now = Date.now()
               const last = lastLogRef.current
               if (!last || last.action !== action || now - last.time > 2000) {
-                if (clientId) {
+                if (latest.clientId) {
                   addShareLog(shareId, {
                     id: Math.random().toString(36).slice(2, 9),
-                    uid: clientId,
-                    user: actorName?.trim() || "익명",
+                    uid: latest.clientId,
+                    user: latest.actorName?.trim() || "익명",
                     action,
                     clientTs: Date.now(),
                   }).catch(() => undefined)
@@ -311,7 +360,7 @@ export function ShareSync({
               syncBlockedRef.current = true
             }
             if (isAuthErrorCode(code) || code === "not-found") {
-              onShareDisabled?.(true, null)
+              latest.onShareDisabled?.(true, null)
             }
             emitStatus(toShareErrorMessage(code))
           })
@@ -326,7 +375,7 @@ export function ShareSync({
       pushInFlightRef.current = false
       pendingPayloadSignatureRef.current = null
     }
-  }, [shareId, tripId, exportTripData, localPasswordHash, actorRole, clientId, actorName, onSync, onError, onShareDisabled, isLocalFallbackClient])
+  }, [shareId, tripId, clientId, isLocalFallbackClient])
 
   useEffect(() => {
     if (actorRole !== "admin") return
