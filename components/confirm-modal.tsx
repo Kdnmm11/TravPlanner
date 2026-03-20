@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DraggablePanel } from "@/components/draggable-panel"
@@ -13,6 +14,29 @@ interface ConfirmModalProps {
 }
 
 export function ConfirmModal({ isOpen, onClose, onConfirm, title, message }: ConfirmModalProps) {
+  const handleConfirm = () => {
+    onConfirm()
+    onClose()
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key === "Enter" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        event.preventDefault()
+        handleConfirm()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose, onConfirm])
+
   if (!isOpen) return null
 
   return (
@@ -35,10 +59,7 @@ export function ConfirmModal({ isOpen, onClose, onConfirm, title, message }: Con
             취소
           </Button>
           <Button
-            onClick={() => {
-              onConfirm()
-              onClose()
-            }}
+            onClick={handleConfirm}
             className="flex-1 bg-red-500 hover:bg-red-600 text-white"
           >
             삭제

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { DraggablePanel } from "@/components/draggable-panel"
@@ -16,6 +16,7 @@ interface TripModalProps {
 }
 
 export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: TripModalProps) {
+  const formRef = useRef<HTMLFormElement>(null)
   const [name, setName] = useState("")
   const [destination, setDestination] = useState("")
   const [startDate, setStartDate] = useState("")
@@ -34,6 +35,31 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
       setEndDate("")
     }
   }, [initialData, mode, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement ||
+        (target instanceof HTMLElement && target.closest("[data-keyboard-ignore='true']"))
+      ) {
+        return
+      }
+      event.preventDefault()
+      formRef.current?.requestSubmit()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -64,7 +90,7 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
           </h2>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               여행 이름

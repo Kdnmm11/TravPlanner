@@ -102,13 +102,54 @@ export function DayInfoModal({
   useEffect(() => {
     if (!isOpen) return
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
       if (event.key === "Escape") {
+        event.preventDefault()
         onClose()
+        return
       }
+      if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLButtonElement ||
+        (target instanceof HTMLElement && target.closest("[data-keyboard-ignore='true']"))
+      ) {
+        return
+      }
+      event.preventDefault()
+      const cityValue = cityEntries
+        .map((entry) => entry.value.trim())
+        .filter(Boolean)
+        .join(", ")
+      onSave({
+        city: cityValue,
+        accommodation: accommodation.trim(),
+        checkInDay: checkInDay.trim(),
+        checkInTime: checkInTime.trim(),
+        checkOutDay: checkOutDay.trim(),
+        checkOutTime: checkOutTime.trim(),
+      })
+      onClose()
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, onSave, cityEntries, accommodation, checkInDay, checkInTime, checkOutDay, checkOutTime])
+
+  const handleSave = () => {
+    const cityValue = cityEntries
+      .map((entry) => entry.value.trim())
+      .filter(Boolean)
+      .join(", ")
+    onSave({
+      city: cityValue,
+      accommodation: accommodation.trim(),
+      checkInDay: checkInDay.trim(),
+      checkInTime: checkInTime.trim(),
+      checkOutDay: checkOutDay.trim(),
+      checkOutTime: checkOutTime.trim(),
+    })
+    onClose()
+  }
 
   const dayOptions = Array.from({ length: Math.max(1, tripDuration) }, (_, index) => `Day ${index + 1}`)
 
@@ -404,21 +445,7 @@ export function DayInfoModal({
           </Button>
           <Button
             className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
-            onClick={() => {
-              const cityValue = cityEntries
-                .map((entry) => entry.value.trim())
-                .filter(Boolean)
-                .join(", ")
-              onSave({
-                city: cityValue,
-                accommodation: accommodation.trim(),
-                checkInDay: checkInDay.trim(),
-                checkInTime: checkInTime.trim(),
-                checkOutDay: checkOutDay.trim(),
-                checkOutTime: checkOutTime.trim(),
-              })
-              onClose()
-            }}
+            onClick={handleSave}
           >
             저장
           </Button>

@@ -283,6 +283,13 @@ function CurrencyPopover({
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                event.stopPropagation()
+              }
+            }}
+            data-keyboard-ignore="true"
             placeholder="통화 검색"
             className="mb-2 w-full rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
           />
@@ -329,6 +336,7 @@ export function BudgetAddModal({
   mode = "add",
   initialData = null,
 }: BudgetAddModalProps) {
+  const formRef = useRef<HTMLFormElement>(null)
   const dayOptions = useMemo(
     () => Array.from({ length: Math.max(1, tripDuration) }, (_, index) => `Day ${index + 1}`),
     [tripDuration]
@@ -337,6 +345,7 @@ export function BudgetAddModal({
   const [title, setTitle] = useState("")
   const [amount, setAmount] = useState("")
   const [currency, setCurrency] = useState("KRW")
+  const [memo, setMemo] = useState("")
   const [category, setCategory] = useState<ScheduleCategory>("other")
   const [subCategory, setSubCategory] = useState("")
   const [dayNumber, setDayNumber] = useState("Day 1")
@@ -352,12 +361,35 @@ export function BudgetAddModal({
   const [stayCheckInTime, setStayCheckInTime] = useState("15:00")
   const [stayCheckOutDay, setStayCheckOutDay] = useState("Day 2")
   const [stayCheckOutTime, setStayCheckOutTime] = useState("11:00")
+  const defaultCheckOutDay = `Day ${Math.min(Math.max(1, tripDuration), 2)}`
 
   const parseTimeWithDay = (value: string, fallbackDay: number) => {
     if (!value) return { time: "", day: `Day ${fallbackDay}` }
     const match = value.match(/^(.+?)\s*\(Day\s+(\d+)\)$/)
     if (!match) return { time: value, day: `Day ${fallbackDay}` }
     return { time: match[1].trim(), day: `Day ${match[2]}` }
+  }
+
+  const resetForm = () => {
+    setTitle("")
+    setAmount("")
+    setCurrency("KRW")
+    setCategory("other")
+    setSubCategory("")
+    setMemo("")
+    setDayNumber("Day 1")
+    setTime("09:00")
+    setEndEnabled(false)
+    setEndDay("Day 1")
+    setEndTime("09:00")
+    setTransportDepDay("Day 1")
+    setTransportDepTime("09:00")
+    setTransportArrDay("Day 1")
+    setTransportArrTime("09:00")
+    setStayCheckInDay("Day 1")
+    setStayCheckInTime("15:00")
+    setStayCheckOutDay(defaultCheckOutDay)
+    setStayCheckOutTime("11:00")
   }
 
   useEffect(() => {
@@ -397,51 +429,79 @@ export function BudgetAddModal({
       )
       setStayCheckOutTime(stayOutTimeRaw || parsedEnd.time || "11:00")
     } else {
-      setTitle("")
-      setAmount("")
-      setCurrency("KRW")
-      setCategory("other")
-      setSubCategory("")
-      setMemo("")
-      setDayNumber("Day 1")
-      setTime("09:00")
-      setEndEnabled(false)
-      setEndDay("Day 1")
-      setEndTime("09:00")
-      setTransportDepDay("Day 1")
-      setTransportDepTime("09:00")
-      setTransportArrDay("Day 1")
-      setTransportArrTime("09:00")
-      setStayCheckInDay("Day 1")
-      setStayCheckInTime("15:00")
-      setStayCheckOutDay("Day 2")
-      setStayCheckOutTime("11:00")
+      resetForm()
     }
-  }, [isOpen, mode, initialData, tripDuration])
-  const [memo, setMemo] = useState("")
+  }, [isOpen, mode, initialData, tripDuration, defaultCheckOutDay])
 
   useEffect(() => {
     if (!isOpen) return
-    setTitle("")
-    setAmount("")
-    setCurrency("KRW")
-    setCategory("other")
-    setSubCategory("")
-    setDayNumber("Day 1")
-    setTime("09:00")
-    setEndEnabled(false)
-    setEndDay("Day 1")
-    setEndTime("09:00")
-    setTransportDepDay("Day 1")
-    setTransportDepTime("09:00")
-    setTransportArrDay("Day 1")
-    setTransportArrTime("09:00")
-    setStayCheckInDay("Day 1")
-    setStayCheckInTime("15:00")
-    setStayCheckOutDay("Day 2")
-    setStayCheckOutTime("11:00")
-    setMemo("")
-  }, [isOpen])
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement ||
+        (target instanceof HTMLElement && target.closest("[data-keyboard-ignore='true']"))
+      ) {
+        return
+      }
+      event.preventDefault()
+      formRef.current?.requestSubmit()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose])
+
+  const handleSubmit = () => {
+    const parsedAmount = Number.parseFloat(amount.replace(/,/g, ""))
+    if (!title.trim()) return
+    let startDayNumber = Number(dayNumber.replace("Day ", "")) || 1
+    let startTimeValue = time
+    let endTimeValue = ""
+    let finalSubCategory = subCategory
+
+    if (category === "transport") {
+      startDayNumber = Number(transportDepDay.replace("Day ", "")) || 1
+      startTimeValue = transportDepTime
+      endTimeValue =
+        transportArrDay !== transportDepDay && transportArrTime
+          ? `${transportArrTime} (${transportArrDay})`
+          : transportArrTime
+    } else if (category === "accommodation") {
+      startDayNumber = Number(stayCheckInDay.replace("Day ", "")) || 1
+      startTimeValue = stayCheckInTime
+      endTimeValue =
+        stayCheckOutDay !== stayCheckInDay && stayCheckOutTime
+          ? `${stayCheckOutTime} (${stayCheckOutDay})`
+          : stayCheckOutTime
+      finalSubCategory = `${stayCheckOutDay}|${stayCheckOutTime}`
+    } else if (endEnabled) {
+      const endDayLabel = endDay || dayNumber
+      endTimeValue =
+        endDayLabel !== dayNumber && endTime
+          ? `${endTime} (${endDayLabel})`
+          : endTime
+    }
+
+    onSubmit({
+      dayNumber: startDayNumber,
+      time: startTimeValue,
+      endTime: endTimeValue,
+      title: title.trim(),
+      memo: memo.trim(),
+      category,
+      subCategory: finalSubCategory,
+      amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
+      currency,
+    })
+    onClose()
+  }
 
   if (!isOpen) return null
 
@@ -449,6 +509,13 @@ export function BudgetAddModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <DraggablePanel className="max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
+        <form
+          ref={formRef}
+          onSubmit={(event) => {
+            event.preventDefault()
+            handleSubmit()
+          }}
+        >
         <div className="mb-6 flex items-center justify-between gap-4">
               <div className="text-xl font-bold text-slate-900">
                 {mode === "edit" ? "예산 수정" : "예산 추가"}
@@ -462,50 +529,7 @@ export function BudgetAddModal({
               취소
             </Button>
             <Button
-              type="button"
-              onClick={() => {
-                const parsedAmount = Number.parseFloat(amount.replace(/,/g, ""))
-                if (!title.trim()) return
-                let startDayNumber = Number(dayNumber.replace("Day ", "")) || 1
-                let startTimeValue = time
-                let endTimeValue = ""
-                let finalSubCategory = subCategory
-
-                if (category === "transport") {
-                  startDayNumber = Number(transportDepDay.replace("Day ", "")) || 1
-                  startTimeValue = transportDepTime
-                  endTimeValue =
-                    transportArrDay !== transportDepDay && transportArrTime
-                      ? `${transportArrTime} (${transportArrDay})`
-                      : transportArrTime
-                } else if (category === "accommodation") {
-                  startDayNumber = Number(stayCheckInDay.replace("Day ", "")) || 1
-                  startTimeValue = stayCheckInTime
-                  endTimeValue =
-                    stayCheckOutDay !== stayCheckInDay && stayCheckOutTime
-                      ? `${stayCheckOutTime} (${stayCheckOutDay})`
-                      : stayCheckOutTime
-                  finalSubCategory = `${stayCheckOutDay}|${stayCheckOutTime}`
-                } else if (endEnabled) {
-                  const endDayLabel = endDay || dayNumber
-                  endTimeValue =
-                    endDayLabel !== dayNumber && endTime
-                      ? `${endTime} (${endDayLabel})`
-                      : endTime
-                }
-                onSubmit({
-                  dayNumber: startDayNumber,
-                  time: startTimeValue,
-                  endTime: endTimeValue,
-                  title: title.trim(),
-                  memo: memo.trim(),
-                  category,
-                  subCategory: finalSubCategory,
-                  amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
-                  currency,
-                })
-                onClose()
-              }}
+              type="submit"
               className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-600"
             >
               저장
@@ -813,6 +837,7 @@ export function BudgetAddModal({
             </div>
           </div>
         </div>
+        </form>
       </DraggablePanel>
     </div>
   )

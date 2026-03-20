@@ -352,6 +352,7 @@ export function ScheduleModal({
   tripDuration,
   currentDayNumber,
 }: ScheduleModalProps) {
+  const formRef = useRef<HTMLFormElement>(null)
   const [time, setTime] = useState("")
   const [endTime, setEndTime] = useState("")
   const [endDay, setEndDay] = useState(`Day ${currentDayNumber}`)
@@ -361,6 +362,7 @@ export function ScheduleModal({
   const [memo, setMemo] = useState("")
   const [amount, setAmount] = useState("")
   const [currency, setCurrency] = useState("KRW")
+  const [budgetEnabled, setBudgetEnabled] = useState(false)
   const [category, setCategory] = useState<ScheduleCategory>("other")
   const [subCategory, setSubCategory] = useState("")
   const [showEndTime, setShowEndTime] = useState(false)
@@ -393,6 +395,7 @@ export function ScheduleModal({
       setMemo(initialData.memo)
       setAmount(Number.isFinite(initialData.amount) ? String(initialData.amount) : "")
       setCurrency(initialData.currency || "KRW")
+      setBudgetEnabled((initialData.amount ?? 0) > 0)
 
       if (initialData.category === "transport") {
         const parsedDep = parseTimeWithDay(initialData.time || "")
@@ -415,6 +418,7 @@ export function ScheduleModal({
       setMemo("")
       setAmount("")
       setCurrency("KRW")
+      setBudgetEnabled(false)
       setShowEndTime(false)
       setTransDepDay(`Day ${currentDayNumber}`)
       setTransDepTime("")
@@ -423,6 +427,31 @@ export function ScheduleModal({
       setTitleError("")
     }
   }, [initialData, mode, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement ||
+        (target instanceof HTMLElement && target.closest("[data-keyboard-ignore='true']"))
+      ) {
+        return
+      }
+      event.preventDefault()
+      formRef.current?.requestSubmit()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -434,7 +463,7 @@ export function ScheduleModal({
     }
     setTitleError("")
     const parsedAmount = Number.parseFloat(amount.replace(/,/g, ""))
-    const normalizedAmount = Number.isFinite(parsedAmount) ? parsedAmount : 0
+    const normalizedAmount = budgetEnabled && Number.isFinite(parsedAmount) ? parsedAmount : 0
 
     if (category === "transport") {
       const depTime = transDepTime
@@ -503,7 +532,7 @@ export function ScheduleModal({
           )}
         </div>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               일정 제목
@@ -751,23 +780,42 @@ export function ScheduleModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              예산
-            </label>
-            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="0"
-                className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-right text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-              />
-              <CurrencyPickerPopover
-                value={currency}
-                onChange={setCurrency}
-              />
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label className="block text-sm font-medium text-slate-700">
+                예산
+              </label>
+              <button
+                type="button"
+                onClick={() => setBudgetEnabled((prev) => !prev)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  budgetEnabled
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {budgetEnabled ? "입력 켜짐" : "입력 꺼짐"}
+              </button>
             </div>
+            {budgetEnabled ? (
+              <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0"
+                  className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-right text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                />
+                <CurrencyPickerPopover
+                  value={currency}
+                  onChange={setCurrency}
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-400">
+                필요할 때만 금액을 추가하세요.
+              </div>
+            )}
           </div>
           
           <div className="flex gap-3 pt-4">
