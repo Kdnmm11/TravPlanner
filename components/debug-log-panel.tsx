@@ -324,9 +324,17 @@ function extractEventData(event: Event) {
     base.meta = event.metaKey
     base.shift = event.shiftKey
   }
-  if (event instanceof TouchEvent) {
-    base.touches = event.touches.length
-    base.changedTouches = event.changedTouches.length
+  if ("touches" in event || "changedTouches" in event) {
+    const touchEvent = event as Event & {
+      touches?: { length: number }
+      changedTouches?: { length: number }
+    }
+    if (touchEvent.touches) {
+      base.touches = touchEvent.touches.length
+    }
+    if (touchEvent.changedTouches) {
+      base.changedTouches = touchEvent.changedTouches.length
+    }
   }
   if (event.type === "input" || event.type === "change") {
     const target = event.target
