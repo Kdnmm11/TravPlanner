@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { ChevronDown } from "lucide-react"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { DraggablePanel } from "@/components/draggable-panel"
 
 interface DayInfoModalProps {
   isOpen: boolean
@@ -99,14 +99,28 @@ export function DayInfoModal({
     }
   }, [isOpen, dayNumber, tripDuration, initialCity, initialAccommodation, initialCheckInDay, initialCheckInTime, initialCheckOutDay, initialCheckOutTime])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose])
+
   const dayOptions = Array.from({ length: Math.max(1, tripDuration) }, (_, index) => `Day ${index + 1}`)
 
+  if (!isOpen) return null
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md" data-dayinfo-dialog>
-        <DialogHeader>
-          <DialogTitle>Day {dayNumber} 도시/숙소</DialogTitle>
-        </DialogHeader>
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <DraggablePanel className="max-w-md rounded-lg border bg-background p-6 shadow-lg" data-dayinfo-dialog>
+        <div className="mb-4">
+          <div className="text-lg font-semibold text-slate-900">Day {dayNumber} 도시/숙소</div>
+        </div>
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -216,6 +230,13 @@ export function DayInfoModal({
                             step={1}
                             value={timeDraft.hour}
                             onChange={(event) => setTimeDraft((prev) => ({ ...prev, hour: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                applyTimeEditor()
+                              }
+                            }}
                             placeholder="00"
                             className="w-20 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                           />
@@ -228,6 +249,13 @@ export function DayInfoModal({
                             step={5}
                             value={timeDraft.minute}
                             onChange={(event) => setTimeDraft((prev) => ({ ...prev, minute: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                applyTimeEditor()
+                              }
+                            }}
                             placeholder="00"
                             className="w-20 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                           />
@@ -312,6 +340,13 @@ export function DayInfoModal({
                             step={1}
                             value={timeDraft.hour}
                             onChange={(event) => setTimeDraft((prev) => ({ ...prev, hour: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                applyTimeEditor()
+                              }
+                            }}
                             placeholder="00"
                             className="w-20 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                           />
@@ -324,6 +359,13 @@ export function DayInfoModal({
                             step={5}
                             value={timeDraft.minute}
                             onChange={(event) => setTimeDraft((prev) => ({ ...prev, minute: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                applyTimeEditor()
+                              }
+                            }}
                             placeholder="00"
                             className="w-20 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                           />
@@ -352,7 +394,7 @@ export function DayInfoModal({
             </div>
           </div>
         </div>
-        <DialogFooter className="gap-2">
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
             variant="outline"
             onClick={onClose}
@@ -380,8 +422,8 @@ export function DayInfoModal({
           >
             저장
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </DraggablePanel>
+    </div>
   )
 }

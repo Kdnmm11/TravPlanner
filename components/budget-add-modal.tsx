@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { DraggablePanel } from "@/components/draggable-panel"
 import type { BudgetFormData, Schedule, ScheduleCategory } from "@/lib/types"
 
 interface BudgetAddModalProps {
@@ -164,6 +165,13 @@ function TimeInputPopover({
               inputMode="numeric"
               value={draft.hour}
               onChange={(event) => setDraft((prev) => ({ ...prev, hour: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  applyEditor()
+                }
+              }}
               placeholder="00"
               className="w-16 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
             />
@@ -173,6 +181,13 @@ function TimeInputPopover({
               inputMode="numeric"
               value={draft.minute}
               onChange={(event) => setDraft((prev) => ({ ...prev, minute: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  applyEditor()
+                }
+              }}
               placeholder="00"
               className="w-16 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
             />
@@ -433,7 +448,7 @@ export function BudgetAddModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
+      <DraggablePanel className="max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
         <div className="mb-6 flex items-center justify-between gap-4">
               <div className="text-xl font-bold text-slate-900">
                 {mode === "edit" ? "예산 수정" : "예산 추가"}
@@ -798,7 +813,7 @@ export function BudgetAddModal({
             </div>
           </div>
         </div>
-      </div>
+      </DraggablePanel>
     </div>
   )
 }

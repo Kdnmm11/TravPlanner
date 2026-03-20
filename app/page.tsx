@@ -8,6 +8,7 @@ import { createShare, hashPassword, setShareEnabled } from "@/lib/share"
 import { ensureAuthUid } from "@/lib/firebase"
 import { TripModal } from "@/components/trip-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
+import { DraggablePanel } from "@/components/draggable-panel"
 import Link from "next/link"
 import type {
   ChecklistCategory,
@@ -162,6 +163,19 @@ export default function HomePage() {
     setTripToDelete(tripId)
     setDeleteModalOpen(true)
     setOpenMenuId(null)
+  }
+
+  const handleConfirmDeleteTrip = async (tripId: string) => {
+    const activeShare = activeShares[tripId]
+    if (activeShare?.shareId) {
+      try {
+        await setShareEnabled(activeShare.shareId, false)
+        setActiveShareEnabled(tripId, false)
+      } catch (error) {
+        console.error("Share disable during trip delete failed", error)
+      }
+    }
+    deleteTrip(tripId)
   }
 
   const handleTripSubmit = (data: TripFormData) => {
@@ -551,7 +565,7 @@ export default function HomePage() {
       <ConfirmModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
-        onConfirm={() => tripToDelete && deleteTrip(tripToDelete)}
+        onConfirm={() => (tripToDelete ? handleConfirmDeleteTrip(tripToDelete) : undefined)}
         title="여행 삭제"
         message="이 여행을 삭제하시겠습니까? 모든 일정이 함께 삭제됩니다."
       />
@@ -559,7 +573,7 @@ export default function HomePage() {
       {shareModalOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShareModalOpen(false)} />
-          <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+          <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
             <div className="mb-4 text-lg font-bold text-slate-900">공유하기</div>
             <label className="text-sm font-semibold text-slate-700">공유할 여행</label>
             <div ref={sharePickerRef} className="relative mt-2">
@@ -683,7 +697,7 @@ export default function HomePage() {
                 )}
               </div>
             )}
-          </div>
+          </DraggablePanel>
         </div>
       )}
 
@@ -696,7 +710,7 @@ export default function HomePage() {
               setImportModalOpen(false)
             }}
           />
-          <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+          <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
             <div className="mb-4 text-lg font-bold text-slate-900">가져오기</div>
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
               <div className="text-sm font-semibold text-slate-600">
@@ -743,7 +757,7 @@ export default function HomePage() {
               </button>
             </div>
             {importError && <div className="mt-3 text-xs font-semibold text-red-500">{importError}</div>}
-          </div>
+          </DraggablePanel>
         </div>
       )}
     </div>

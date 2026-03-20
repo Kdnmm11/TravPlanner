@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { sendShareMessage, subscribeShareMessages } from "@/lib/share"
+import { DraggablePanel } from "@/components/draggable-panel"
 import type { ShareMessage } from "@/lib/share"
 
 interface ShareChatModalProps {
@@ -59,7 +60,10 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="fixed right-6 top-24 w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+      <DraggablePanel
+        className="max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+        defaultOffset={{ x: 420, y: -180 }}
+      >
         <div className="flex items-center justify-between">
           <div className="text-lg font-bold text-slate-900">채팅</div>
           <button
@@ -114,7 +118,7 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
             인증 설정 문제로 채팅 전송을 사용할 수 없습니다.
           </div>
         )}
-      </div>
+      </DraggablePanel>
     </div>
   )
 }

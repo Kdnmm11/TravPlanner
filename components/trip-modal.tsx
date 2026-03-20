@@ -1,9 +1,10 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { DateRangePicker } from "@/components/date-range-picker"
+import { DraggablePanel } from "@/components/draggable-panel"
 import type { Trip, TripFormData } from "@/lib/types"
 
 interface TripModalProps {
@@ -51,10 +52,9 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div
+      <DraggablePanel
         data-trip-modal
-        className="fixed w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100"
-        style={{ left: "508px", top: "124px" }}
+        className="max-w-md overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl"
       >
         <div
           className="sticky top-0 bg-white px-6 pt-6 pb-4 border-b border-slate-100 z-10"
@@ -120,7 +120,7 @@ export function TripModal({ isOpen, onClose, onSubmit, mode, initialData }: Trip
             </Button>
           </div>
         </form>
-      </div>
+      </DraggablePanel>
     </div>
   )
 }

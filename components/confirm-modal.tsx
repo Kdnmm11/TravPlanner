@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DraggablePanel } from "@/components/draggable-panel"
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -17,7 +18,7 @@ export function ConfirmModal({ isOpen, onClose, onConfirm, title, message }: Con
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 text-center">
+      <DraggablePanel className="mx-4 max-w-sm rounded-xl bg-white p-6 text-center shadow-xl">
         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <AlertTriangle className="w-6 h-6 text-red-600" />
         </div>
@@ -43,7 +44,7 @@ export function ConfirmModal({ isOpen, onClose, onConfirm, title, message }: Con
             삭제
           </Button>
         </div>
-      </div>
+      </DraggablePanel>
     </div>
   )
 }

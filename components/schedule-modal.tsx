@@ -4,6 +4,7 @@ import React from "react"
 
 import { useRef, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { DraggablePanel } from "@/components/draggable-panel"
 import type { ScheduleFormData, ScheduleCategory } from "@/lib/types"
 
 interface ScheduleModalProps {
@@ -198,6 +199,13 @@ function TimeInputPopover({
               inputMode="numeric"
               value={draft.hour}
               onChange={(event) => setDraft((prev) => ({ ...prev, hour: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  applyEditor()
+                }
+              }}
               placeholder="00"
               className="w-16 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
             />
@@ -207,6 +215,13 @@ function TimeInputPopover({
               inputMode="numeric"
               value={draft.minute}
               onChange={(event) => setDraft((prev) => ({ ...prev, minute: event.target.value }))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  applyEditor()
+                }
+              }}
               placeholder="00"
               className="w-16 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-center text-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200"
             />
@@ -366,7 +381,7 @@ export function ScheduleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl w-full max-w-md mx-4 p-6">
+      <DraggablePanel className="mx-4 max-w-md rounded-xl bg-white p-6">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-900">
             {mode === "add" ? "일정 추가" : "일정 수정"}
@@ -647,7 +662,7 @@ export function ScheduleModal({
           </div>
         </form>
 
-      </div>
+      </DraggablePanel>
     </div>
   )
 }

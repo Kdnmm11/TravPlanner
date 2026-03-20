@@ -11,6 +11,7 @@ import { TripModal } from "@/components/trip-modal"
 import { DayInfoModal } from "@/components/day-info-modal"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
+import { DraggablePanel } from "@/components/draggable-panel"
 import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
@@ -310,7 +311,7 @@ export default function TripDetailPage() {
         {shareNameOpen && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/40" />
-            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">이름 입력</div>
               <p className="mt-2 text-sm text-slate-500">공유 로그에 표시될 이름을 입력해 주세요.</p>
               <input
@@ -327,14 +328,14 @@ export default function TripDetailPage() {
               >
                 저장
               </button>
-            </div>
+            </DraggablePanel>
           </div>
         )}
 
         {sharePasswordOpen && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/40" />
-            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">비밀번호 입력</div>
               <p className="mt-2 text-sm text-slate-500">공유 링크에 설정된 비밀번호를 입력해 주세요.</p>
               <input
@@ -352,7 +353,7 @@ export default function TripDetailPage() {
               >
                 확인
               </button>
-            </div>
+            </DraggablePanel>
           </div>
         )}
       </div>
@@ -420,7 +421,14 @@ export default function TripDetailPage() {
     updateTrip(trip.id, data)
   }
 
-  const handleTripDelete = () => {
+  const handleTripDelete = async () => {
+    if (effectiveShareId && isAdmin) {
+      try {
+        await setShareEnabledRemote(effectiveShareId, false)
+      } catch (error) {
+        console.error("Share disable during trip delete failed", error)
+      }
+    }
     deleteTrip(trip.id)
     router.push("/")
   }
@@ -824,8 +832,8 @@ export default function TripDetailPage() {
         />
 
         {shareSettingsOpen && effectiveShareId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <div className="fixed inset-0 z-50 bg-black/40 px-4">
+            <DraggablePanel className="max-w-md rounded-2xl bg-white p-5 shadow-xl">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-bold text-slate-900">공유 설정</div>
                 <button
@@ -902,24 +910,24 @@ export default function TripDetailPage() {
                   관리자는 공유 링크와 비밀번호를 수정할 수 있어요.
                 </div>
               )}
-            </div>
+            </DraggablePanel>
           </div>
         )}
 
         {accessDenied && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/60" />
-            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">접속이 차단되었습니다</div>
               <p className="mt-2 text-sm text-slate-500">호스트가 접근을 차단했습니다.</p>
-            </div>
+            </DraggablePanel>
           </div>
         )}
 
         {shareNameOpen && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/40" />
-            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">이름 입력</div>
               <p className="mt-2 text-sm text-slate-500">공유 로그에 표시될 이름을 입력해 주세요.</p>
               <input
@@ -936,14 +944,14 @@ export default function TripDetailPage() {
               >
                 저장
               </button>
-            </div>
+            </DraggablePanel>
           </div>
         )}
 
         {sharePasswordOpen && (
           <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/40" />
-            <div className="fixed left-1/2 top-1/2 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-lg">
+            <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">비밀번호 입력</div>
               <p className="mt-2 text-sm text-slate-500">공유 링크에 설정된 비밀번호를 입력해 주세요.</p>
               <input
@@ -961,7 +969,7 @@ export default function TripDetailPage() {
               >
                 확인
               </button>
-            </div>
+            </DraggablePanel>
           </div>
         )}
       </div>
