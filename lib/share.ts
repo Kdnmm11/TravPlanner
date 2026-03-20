@@ -30,14 +30,19 @@ import {
 
 export type { ShareLog, ShareMember, ShareMessage, SharePayload, ShareSnapshotData } from "@/lib/share-types"
 
-const preferredShareBackend = (process.env.NEXT_PUBLIC_SHARE_BACKEND ?? "selfhost").toLowerCase()
+const requestedShareBackend = (
+  process.env.NEXT_PUBLIC_SHARE_BACKEND ??
+  (process.env.NODE_ENV === "development" ? "selfhost" : "firebase")
+).toLowerCase()
+const useSelfHostedShareBackend =
+  requestedShareBackend === "selfhost" && process.env.NODE_ENV !== "production"
 
 export function isSelfHostedShareId(shareId?: string | null) {
   return Boolean(shareId && shareId.startsWith(SELF_HOSTED_SHARE_PREFIX))
 }
 
 function shouldCreateSelfHostedShare() {
-  return preferredShareBackend !== "firebase"
+  return useSelfHostedShareBackend
 }
 
 function createShareError(code: string, message: string) {

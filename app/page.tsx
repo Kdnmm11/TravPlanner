@@ -652,7 +652,10 @@ export default function HomePage() {
       {shareModalOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShareModalOpen(false)} />
-          <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
+          <DraggablePanel
+            defaultOffset={{ x: 0, y: 12 }}
+            className="max-w-sm rounded-2xl bg-white p-6 shadow-lg"
+          >
             <div className="mb-4 text-lg font-bold text-slate-900">공유하기</div>
             <label className="text-sm font-semibold text-slate-700">공유할 여행</label>
             <div ref={sharePickerRef} className="relative mt-2">

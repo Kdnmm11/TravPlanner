@@ -15,8 +15,12 @@ const envFirebaseConfig = {
 
 const envConfigValues = Object.values(envFirebaseConfig)
 const hasCompleteEnvFirebaseConfig = envConfigValues.every((value) => Boolean(value))
-const preferredShareBackend = (process.env.NEXT_PUBLIC_SHARE_BACKEND ?? "selfhost").toLowerCase()
-const useSelfHostedShareBackend = preferredShareBackend === "selfhost"
+const requestedShareBackend = (
+  process.env.NEXT_PUBLIC_SHARE_BACKEND ??
+  (process.env.NODE_ENV === "development" ? "selfhost" : "firebase")
+).toLowerCase()
+const useSelfHostedShareBackend =
+  requestedShareBackend === "selfhost" && process.env.NODE_ENV !== "production"
 
 if (!hasCompleteEnvFirebaseConfig && !useSelfHostedShareBackend) {
   console.warn(
