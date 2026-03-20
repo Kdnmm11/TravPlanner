@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import { ChevronLeft, ChevronRight, Calendar, X } from "lucide-react"
 
@@ -9,9 +9,16 @@ interface DateRangePickerProps {
   endDate: string
   onDateChange: (startDate: string, endDate: string) => void
   onOpenChange?: (isOpen: boolean) => void
+  anchorRef?: RefObject<HTMLElement | null>
 }
 
-export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange }: DateRangePickerProps) {
+export function DateRangePicker({
+  startDate,
+  endDate,
+  onDateChange,
+  onOpenChange,
+  anchorRef,
+}: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
   const [selectingStart, setSelectingStart] = useState(true)
@@ -246,29 +253,16 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
       if (!trigger || typeof window === "undefined") return
 
       const triggerRect = trigger.getBoundingClientRect()
-      const modal = trigger.closest("[data-trip-modal]")
-      const modalRect = modal instanceof HTMLElement ? modal.getBoundingClientRect() : null
+      const anchorRect = anchorRef?.current?.getBoundingClientRect() ?? null
       const width = Math.min(520, window.innerWidth - viewportPadding * 2)
       const popupHeight = popupRef.current?.offsetHeight ?? 0
 
       let left = 0
       let top = 0
 
-      if (modalRect) {
-        const rect = modalRect
-        const preferredRightLeft = rect.right + popupGap
-        const preferredLeftLeft = rect.left - width - popupGap
-        const maxLeft = window.innerWidth - width - viewportPadding
-
-        if (preferredRightLeft <= maxLeft) {
-          left = preferredRightLeft
-        } else if (preferredLeftLeft >= viewportPadding) {
-          left = preferredLeftLeft
-        } else {
-          left = Math.max(viewportPadding, Math.min(maxLeft, rect.right - width * 0.28))
-        }
-
-        const centeredTop = rect.top + (rect.height - popupHeight) / 2
+      if (anchorRect) {
+        left = anchorRect.right + popupGap
+        const centeredTop = anchorRect.top + (anchorRect.height - popupHeight) / 2
         top = Math.max(
           viewportPadding,
           Math.min(centeredTop, window.innerHeight - popupHeight - viewportPadding)
