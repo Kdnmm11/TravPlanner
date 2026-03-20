@@ -16,14 +16,14 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoverDate, setHoverDate] = useState<Date | null>(null)
-  const fixedPopupPosition = { left: 959, top: 346, width: 520 }
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<number | null>(null)
   const [popupStyle, setPopupStyle] = useState<{ top: number; left: number; width: number }>(() => ({
-    top: fixedPopupPosition.top,
-    left: fixedPopupPosition.left,
-    width: fixedPopupPosition.width,
+    top: 0,
+    left: 0,
+    width: 520,
   }))
 
   const daysOfWeek = ["일", "월", "화", "수", "목", "금", "토"]
@@ -54,16 +54,6 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
   useEffect(() => {
     onOpenChange?.(isOpen)
   }, [isOpen, onOpenChange])
-
-  useEffect(() => {
-    if (isOpen) {
-      setPopupStyle({
-        top: fixedPopupPosition.top,
-        left: fixedPopupPosition.left,
-        width: fixedPopupPosition.width,
-      })
-    }
-  }, [isOpen])
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear()
@@ -249,21 +239,44 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
   useEffect(() => {
     if (!isOpen) return
 
+    const viewportPadding = 16
+    const popupGap = 12
     const updatePosition = () => {
-      setPopupStyle({
-        top: fixedPopupPosition.top,
-        left: fixedPopupPosition.left,
-        width: fixedPopupPosition.width,
+      const trigger = triggerRef.current
+      if (!trigger || typeof window === "undefined") return
+
+      const rect = trigger.getBoundingClientRect()
+      const width = Math.min(520, window.innerWidth - viewportPadding * 2)
+      const popupHeight = popupRef.current?.offsetHeight ?? 0
+
+      let left = rect.left + rect.width / 2 - width / 2
+      left = Math.max(viewportPadding, Math.min(left, window.innerWidth - width - viewportPadding))
+
+      const belowTop = rect.bottom + popupGap
+      const aboveTop = rect.top - popupHeight - popupGap
+      const shouldPlaceAbove = popupHeight > 0 && belowTop + popupHeight > window.innerHeight - viewportPadding && aboveTop >= viewportPadding
+      const top = shouldPlaceAbove ? aboveTop : Math.max(viewportPadding, belowTop)
+
+      setPopupStyle((prev) => {
+        if (prev.top === top && prev.left === left && prev.width === width) {
+          return prev
+        }
+        return { top, left, width }
       })
     }
 
     updatePosition()
-    window.addEventListener("resize", updatePosition)
-    window.addEventListener("scroll", updatePosition, true)
+    const tick = () => {
+      updatePosition()
+      frameRef.current = window.requestAnimationFrame(tick)
+    }
+    frameRef.current = window.requestAnimationFrame(tick)
 
     return () => {
-      window.removeEventListener("resize", updatePosition)
-      window.removeEventListener("scroll", updatePosition, true)
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
+      }
     }
   }, [isOpen])
 
@@ -313,7 +326,7 @@ export function DateRangePicker({ startDate, endDate, onDateChange, onOpenChange
         createPortal(
           <div
             ref={popupRef}
-            className="fixed z-[80] -translate-y-1/2 bg-white shadow-2xl border border-slate-200 overflow-hidden rounded-xl"
+            className="fixed z-[80] bg-white shadow-2xl border border-slate-200 overflow-hidden rounded-xl"
             style={{ top: popupStyle.top, left: popupStyle.left, width: popupStyle.width }}
           >
             {/* Header */}
