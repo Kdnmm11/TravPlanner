@@ -33,7 +33,7 @@ type StoreSummary = {
 
 export function DebugLogPanel() {
   const pathname = usePathname()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [paused, setPaused] = useState(false)
   const [entries, setEntries] = useState<DebugLogEntry[]>(() => getDebugLogs())
 

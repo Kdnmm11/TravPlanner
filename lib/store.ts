@@ -24,14 +24,14 @@ interface TravelStore {
   checklistCategories: ChecklistCategory[]
   checklistItems: ChecklistItem[]
   selectedTripId: string | null
-  activeShares: Record<string, { shareId: string; enabled: boolean }>
+  activeShares: Record<string, { shareId: string; enabled: boolean; role: "admin" | "member" }>
 
   // Trip actions
   addTrip: (trip: TripFormData) => void
   updateTrip: (id: string, updates: Partial<Trip>) => void
   deleteTrip: (id: string) => void
   selectTrip: (id: string | null) => void
-  setActiveShare: (tripId: string, shareId: string, enabled: boolean) => void
+  setActiveShare: (tripId: string, shareId: string, enabled: boolean, role: "admin" | "member") => void
   setActiveShareEnabled: (tripId: string, enabled: boolean) => void
   clearActiveShare: (tripId: string) => void
 
@@ -140,7 +140,7 @@ function buildDayViews(trip: Trip, schedules: Schedule[]): DayView[] {
   return days
 }
 
-const storeVersion = 1
+const storeVersion = 2
 
 type LegacySchedule = {
   id?: string
@@ -280,11 +280,11 @@ export const useTravelStore = create<TravelStore>()(
         }),
 
       selectTrip: (id) => set({ selectedTripId: id }),
-      setActiveShare: (tripId, shareId, enabled) =>
+      setActiveShare: (tripId, shareId, enabled, role) =>
         set((state) => ({
           activeShares: {
             ...state.activeShares,
-            [tripId]: { shareId, enabled },
+            [tripId]: { shareId, enabled, role },
           },
         })),
       setActiveShareEnabled: (tripId, enabled) =>
@@ -837,13 +837,24 @@ export const useTravelStore = create<TravelStore>()(
         const migrated = migrateLegacyState(persistedState)
         if (migrated) return migrated
         const state = persistedState as any
+        const normalizedActiveShares = Object.entries(state?.activeShares ?? {}).reduce<
+          Record<string, { shareId: string; enabled: boolean; role: "admin" | "member" }>
+        >((accumulator, [tripId, value]) => {
+          const candidate = value as { shareId?: unknown; enabled?: unknown; role?: unknown }
+          if (typeof candidate?.shareId !== "string" || !candidate.shareId) {
+            return accumulator
+          }
+          accumulator[tripId] = {
+            shareId: candidate.shareId,
+            enabled: candidate?.enabled !== false,
+            role: candidate?.role === "member" ? "member" : "admin",
+          }
+          return accumulator
+        }, {})
         if (!state?.exchangeRates || state.exchangeRates.length === 0) {
-          return { ...state, exchangeRates: defaultExchangeRates, activeShares: state.activeShares ?? {} }
+          return { ...state, exchangeRates: defaultExchangeRates, activeShares: normalizedActiveShares }
         }
-        if (!state?.activeShares) {
-          return { ...state, activeShares: {} }
-        }
-        return state
+        return { ...state, activeShares: normalizedActiveShares }
       },
       partialize: (state) => ({
         trips: state.trips,

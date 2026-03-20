@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react"
 import { Plane, Plus, Calendar, MapPin, MoreHorizontal, Edit2, Trash2, Share2, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
-import { createShare, hashPassword, setShareEnabled } from "@/lib/share"
+import { createShare, findShareByTripId, hashPassword, setShareEnabled, subscribeShare } from "@/lib/share"
 import { ensureAuthUid } from "@/lib/firebase"
 import { TripModal } from "@/components/trip-modal"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
+import { PasswordInput } from "@/components/password-input"
+import { setStoredSharePasswordHash } from "@/lib/share-local"
 import Link from "next/link"
 import type {
   ChecklistCategory,
@@ -55,6 +57,10 @@ function isImportPayload(value: unknown): value is ImportPayload {
     (value.checklistItems === undefined || Array.isArray(value.checklistItems)) &&
     (value.exchangeRates === undefined || Array.isArray(value.exchangeRates))
   )
+}
+
+function isTerminalShareErrorCode(code?: string) {
+  return code === "not-found" || code === "permission-denied" || code === "unauthenticated"
 }
 
 export default function HomePage() {
@@ -135,6 +141,74 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    if (!clientId) return
+    let cancelled = false
+
+    const recoverShareLinks = async () => {
+      for (const trip of trips) {
+        if (cancelled) return
+        if (activeShares[trip.id]) continue
+        try {
+          const match = await findShareByTripId(trip.id)
+          if (!match || cancelled) continue
+          const role = match.snapshot.ownerId && match.snapshot.ownerId === clientId ? "admin" : "member"
+          if (!match.snapshot.enabled && role === "member") {
+            deleteTrip(trip.id)
+            continue
+          }
+          setActiveShare(trip.id, match.shareId, match.snapshot.enabled, role)
+        } catch (error) {
+          console.error("Share link recovery failed", error)
+        }
+      }
+    }
+
+    void recoverShareLinks()
+    return () => {
+      cancelled = true
+    }
+  }, [clientId, trips, activeShares, deleteTrip, setActiveShare])
+
+  useEffect(() => {
+    if (!clientId) return
+    const joinedShares = Object.entries(activeShares).filter(([, share]) => share.role === "member")
+    if (joinedShares.length === 0) return
+
+    const unsubscribers = joinedShares.map(([tripId, share]) =>
+      subscribeShare(
+        share.shareId,
+        ({ enabled, ownerId }) => {
+          if (!enabled) {
+            deleteTrip(tripId)
+            return
+          }
+          const currentShare = useTravelStore.getState().activeShares[tripId]
+          const nextRole = ownerId && ownerId === clientId ? "admin" : "member"
+          if (
+            !currentShare ||
+            currentShare.shareId !== share.shareId ||
+            currentShare.enabled !== enabled ||
+            currentShare.role !== nextRole
+          ) {
+            setActiveShare(tripId, share.shareId, enabled, nextRole)
+          }
+        },
+        (error) => {
+          if (isTerminalShareErrorCode(error.code)) {
+            deleteTrip(tripId)
+          } else {
+            console.error("Joined share subscription failed", error)
+          }
+        }
+      )
+    )
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe())
+    }
+  }, [clientId, activeShares, deleteTrip, setActiveShare])
+
+  useEffect(() => {
     if (!shareTripPickerOpen) return
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node
@@ -167,7 +241,7 @@ export default function HomePage() {
 
   const handleConfirmDeleteTrip = async (tripId: string) => {
     const activeShare = activeShares[tripId]
-    if (activeShare?.shareId) {
+    if (activeShare?.shareId && activeShare.role === "admin") {
       try {
         await setShareEnabled(activeShare.shareId, false)
         setActiveShareEnabled(tripId, false)
@@ -262,13 +336,13 @@ export default function HomePage() {
       setShareLink(link)
       setShareDocId(shareId)
       setShareEnabledState(true)
-      setActiveShare(trip.id, shareId, true)
+      setActiveShare(trip.id, shareId, true, "admin")
       if (passwordHash) {
-        localStorage.setItem(`trav-share-pass:${shareId}`, passwordHash)
+        setStoredSharePasswordHash(shareId, passwordHash)
       }
     } catch (error) {
       console.error("Share link creation failed", error)
-      setShareError("링크 생성에 실패했습니다. Firestore가 활성화되어 있는지 확인해 주세요.")
+      setShareError("링크 생성에 실패했습니다. 서버 상태를 확인한 뒤 다시 시도해 주세요.")
     } finally {
       setShareLoading(false)
     }
@@ -317,7 +391,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!selectedShareTripId) return
     const active = activeShares[selectedShareTripId]
-    if (!active) return
+    if (!active || active.role !== "admin") {
+      setShareDocId(null)
+      setShareEnabledState(true)
+      setShareLink("")
+      return
+    }
     setShareDocId(active.shareId)
     setShareEnabledState(active.enabled)
     setShareLink(`${getShareBaseUrl()}/trip/${selectedShareTripId}?share=${active.shareId}`)
@@ -629,8 +708,7 @@ export default function HomePage() {
                 </button>
               </div>
               {sharePasswordEnabled && (
-                <input
-                  type="password"
+                <PasswordInput
                   value={sharePassword}
                   onChange={(event) => setSharePassword(event.target.value)}
                   placeholder="비밀번호 입력"

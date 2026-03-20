@@ -1,7 +1,7 @@
 "use client"
 
 import { initializeApp, getApps } from "firebase/app"
-import { getAuth, onAuthStateChanged, signInAnonymously, type User } from "firebase/auth"
+import { getAuth, signInAnonymously } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 
 const envFirebaseConfig = {
@@ -15,8 +15,10 @@ const envFirebaseConfig = {
 
 const envConfigValues = Object.values(envFirebaseConfig)
 const hasCompleteEnvFirebaseConfig = envConfigValues.every((value) => Boolean(value))
+const preferredShareBackend = (process.env.NEXT_PUBLIC_SHARE_BACKEND ?? "selfhost").toLowerCase()
+const useSelfHostedShareBackend = preferredShareBackend === "selfhost"
 
-if (!hasCompleteEnvFirebaseConfig) {
+if (!hasCompleteEnvFirebaseConfig && !useSelfHostedShareBackend) {
   console.warn(
     "Firebase env vars are missing. Set all NEXT_PUBLIC_FIREBASE_* keys."
   )
@@ -47,35 +49,26 @@ function readOrCreateLocalClientId() {
 }
 
 export async function ensureAuthUid() {
+  if (useSelfHostedShareBackend) {
+    return readOrCreateLocalClientId()
+  }
   if (auth.currentUser?.uid) {
+    await auth.currentUser.getIdToken()
     persistClientId(auth.currentUser.uid)
     return auth.currentUser.uid
   }
   if (!authUidPromise) {
     authUidPromise = (async () => {
       try {
-        const user = await new Promise<User | null>((resolve) => {
-          let settled = false
-          let unsubscribe: () => void = () => undefined
-          const finish = (currentUser: User | null) => {
-            if (settled) return
-            settled = true
-            unsubscribe()
-            resolve(currentUser)
-          }
-          unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            finish(currentUser)
-          })
-          window.setTimeout(() => {
-            finish(auth.currentUser)
-          }, 1200)
-        })
-        if (user?.uid) {
-          persistClientId(user.uid)
-          return user.uid
+        await auth.authStateReady()
+        if (auth.currentUser?.uid) {
+          await auth.currentUser.getIdToken()
+          persistClientId(auth.currentUser.uid)
+          return auth.currentUser.uid
         }
 
         const credential = await signInAnonymously(auth)
+        await credential.user.getIdToken()
         persistClientId(credential.user.uid)
         return credential.user.uid
       } catch (error) {

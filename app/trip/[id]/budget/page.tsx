@@ -10,6 +10,7 @@ import { BudgetAddModal } from "@/components/budget-add-modal"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
+import { PasswordInput } from "@/components/password-input"
 import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
@@ -20,6 +21,13 @@ import {
 } from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
 import type { Schedule } from "@/lib/types"
+import {
+  clearStoredSharePasswordHash,
+  getStoredShareName,
+  getStoredSharePasswordHash,
+  setStoredShareName,
+  setStoredSharePasswordHash,
+} from "@/lib/share-local"
 
 const currencyCatalog = [
   { code: "USD", label: "미국", unit: 1 },
@@ -88,6 +96,7 @@ export default function TripBudgetPage() {
     deleteTrip,
     exportTripData,
     activeShares,
+    setActiveShare,
   } = useTravelStore()
   const router = useRouter()
 
@@ -128,6 +137,7 @@ export default function TripBudgetPage() {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const activeShare = activeShares[id]
   const effectiveShareId = shareId ?? activeShare?.shareId ?? null
+  const isJoinedShare = Boolean(shareId) || activeShare?.role === "member"
   const [shareEnabled, setShareEnabledState] = useState(activeShare?.enabled ?? true)
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
   const [lastSyncDirection, setLastSyncDirection] = useState<"push" | "pull" | null>(null)
@@ -143,6 +153,7 @@ export default function TripBudgetPage() {
   const [sharePassword, setSharePassword] = useState("")
   const [sharePasswordOpen, setSharePasswordOpen] = useState(false)
   const [sharePasswordHash, setSharePasswordHash] = useState<string | null>(null)
+  const [sharePasswordReady, setSharePasswordReady] = useState(() => !effectiveShareId)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [shareSettingsOpen, setShareSettingsOpen] = useState(false)
   const [sharePasswordNext, setSharePasswordNext] = useState("")
@@ -158,17 +169,39 @@ export default function TripBudgetPage() {
   }, [activeShare?.enabled])
 
   useEffect(() => {
+    if (!shareId || !trip || !effectiveShareId) return
+    const nextRole = isAdmin ? "admin" : "member"
+    if (
+      activeShare?.shareId === effectiveShareId &&
+      activeShare.enabled === shareEnabled &&
+      activeShare.role === nextRole
+    ) {
+      return
+    }
+    setActiveShare(trip.id, effectiveShareId, shareEnabled, nextRole)
+  }, [shareId, trip, effectiveShareId, shareEnabled, isAdmin, activeShare, setActiveShare])
+
+  useEffect(() => {
+    if (!effectiveShareId) {
+      setSharePasswordHash(null)
+      setSharePasswordReady(true)
+      return
+    }
+    setSharePasswordReady(false)
+    setSharePasswordHash(getStoredSharePasswordHash(effectiveShareId))
+    setSharePasswordReady(true)
+  }, [effectiveShareId])
+
+  useEffect(() => {
     if (!effectiveShareId || !clientId) return
-    if (!shareId) {
+    if (!shareId && activeShare?.role !== "member") {
       setShareName("admin")
       setShareNameOpen(false)
       setIsLocalAdmin(true)
       return
     }
-    const nameKey = `trav-share-name:${effectiveShareId}`
-    const passKey = `trav-share-pass:${effectiveShareId}`
-    const storedName = localStorage.getItem(nameKey)
-    const storedPass = localStorage.getItem(passKey)
+    const storedName = getStoredShareName(effectiveShareId)
+    const storedPass = getStoredSharePasswordHash(effectiveShareId)
     const isOwnerByDoc = Boolean(shareOwnerId && shareOwnerId === clientId)
     if (isOwnerByDoc) {
       setShareName("admin")
@@ -185,7 +218,7 @@ export default function TripBudgetPage() {
     if (storedPass) {
       setSharePasswordHash(storedPass)
     }
-  }, [effectiveShareId, clientId, shareOwnerId])
+  }, [effectiveShareId, clientId, shareId, shareOwnerId, activeShare?.role])
 
   useEffect(() => {
     let cancelled = false
@@ -206,11 +239,11 @@ export default function TripBudgetPage() {
   useEffect(() => {
     if (!accessDenied) return
     if (isAdmin) return
-    if (shareId) {
+    if (isJoinedShare) {
       deleteTrip(id)
     }
     router.replace("/")
-  }, [accessDenied, isAdmin, router, shareId, deleteTrip, id])
+  }, [accessDenied, isAdmin, isJoinedShare, router, deleteTrip, id])
 
   const handleSync = (direction: "push" | "pull") => {
     setLastSyncAt(new Date())
@@ -239,7 +272,7 @@ export default function TripBudgetPage() {
 
   const handleSubmitShareName = () => {
     if (!effectiveShareId || !shareName.trim()) return
-    localStorage.setItem(`trav-share-name:${effectiveShareId}`, shareName.trim())
+    setStoredShareName(effectiveShareId, shareName.trim())
     setShareNameOpen(false)
   }
 
@@ -247,7 +280,7 @@ export default function TripBudgetPage() {
     if (!effectiveShareId || !sharePassword.trim()) return
     const hash = await hashPassword(sharePassword.trim())
     setSharePasswordHash(hash)
-    localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
+    setStoredSharePasswordHash(effectiveShareId, hash)
     setPasswordError(null)
     setSharePasswordOpen(false)
   }
@@ -280,7 +313,7 @@ export default function TripBudgetPage() {
     setShareSettingsError(null)
     if (!sharePasswordEnabled) {
       await setSharePasswordRemote(effectiveShareId, null)
-      localStorage.removeItem(`trav-share-pass:${effectiveShareId}`)
+      clearStoredSharePasswordHash(effectiveShareId)
       setSharePasswordHash(null)
       setShareSettingsOpen(false)
       return
@@ -291,7 +324,7 @@ export default function TripBudgetPage() {
     }
     const hash = await hashPassword(sharePasswordNext.trim())
     await setSharePasswordRemote(effectiveShareId, hash)
-    localStorage.setItem(`trav-share-pass:${effectiveShareId}`, hash)
+    setStoredSharePasswordHash(effectiveShareId, hash)
     setSharePasswordHash(hash)
     setShareSettingsOpen(false)
   }
@@ -325,7 +358,7 @@ export default function TripBudgetPage() {
   const handleShareDisabled = (disabled: boolean, ownerId?: string | null) => {
     if (!disabled) return
     if (clientId && ownerId && clientId === ownerId) return
-    if (shareId) {
+    if (isJoinedShare) {
       deleteTrip(id)
     }
     router.replace("/")
@@ -370,33 +403,35 @@ export default function TripBudgetPage() {
           <p className="text-sm text-slate-500">
             {shareEnabled ? "잠시만 기다려 주세요" : "공유를 켜면 내용을 확인할 수 있어요"}
           </p>
-          <ShareSync
-            shareId={effectiveShareId}
-            tripId={id}
-            onStatusChange={setShareEnabledState}
-            onSync={handleSync}
-            onError={setSyncError}
-            onLogsChange={setShareLogs}
-            onAuthRequired={(required) => {
-              if (!required) {
-                setSharePasswordOpen(false)
-                setPasswordError(null)
-                return
-              }
-              setSharePasswordOpen(true)
-              setPasswordError(sharePasswordHash ? "비밀번호가 올바르지 않습니다" : "비밀번호가 필요합니다")
-            }}
-            localPasswordHash={sharePasswordHash}
-            actorName={shareName || "익명"}
-            clientId={clientId}
-            actorRole={isAdmin ? "admin" : "member"}
-            onMembersChange={(members, ownerId) => {
-              setShareMembers(members)
-              setShareOwnerId(ownerId ?? null)
-            }}
-            onAccessDenied={(denied) => setAccessDenied(denied)}
-            onShareDisabled={handleShareDisabled}
-          />
+          {sharePasswordReady && (
+            <ShareSync
+              shareId={effectiveShareId}
+              tripId={id}
+              onStatusChange={setShareEnabledState}
+              onSync={handleSync}
+              onError={setSyncError}
+              onLogsChange={setShareLogs}
+              onAuthRequired={(required) => {
+                if (!required) {
+                  setSharePasswordOpen(false)
+                  setPasswordError(null)
+                  return
+                }
+                setSharePasswordOpen(true)
+                setPasswordError(sharePasswordHash ? "비밀번호가 올바르지 않습니다" : "비밀번호가 필요합니다")
+              }}
+              localPasswordHash={sharePasswordHash}
+              actorName={shareName || "익명"}
+              clientId={clientId}
+              actorRole={isAdmin ? "admin" : "member"}
+              onMembersChange={(members, ownerId) => {
+                setShareMembers(members)
+                setShareOwnerId(ownerId ?? null)
+              }}
+              onAccessDenied={(denied) => setAccessDenied(denied)}
+              onShareDisabled={handleShareDisabled}
+            />
+          )}
         </div>
 
         {shareNameOpen && (
@@ -429,8 +464,7 @@ export default function TripBudgetPage() {
             <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
               <div className="text-lg font-bold text-slate-900">비밀번호 입력</div>
               <p className="mt-2 text-sm text-slate-500">공유 링크에 설정된 비밀번호를 입력해 주세요.</p>
-              <input
-                type="password"
+              <PasswordInput
                 value={sharePassword}
                 onChange={(event) => setSharePassword(event.target.value)}
                 placeholder="비밀번호"
@@ -940,7 +974,7 @@ export default function TripBudgetPage() {
         }}
       />
 
-      {effectiveShareId && (
+      {effectiveShareId && sharePasswordReady && (
         <ShareSync
           shareId={effectiveShareId}
           tripId={trip.id}
@@ -1016,8 +1050,7 @@ export default function TripBudgetPage() {
                   비밀번호 사용
                 </label>
                 {sharePasswordEnabled && (
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={sharePasswordNext}
                     onChange={(event) => setSharePasswordNext(event.target.value)}
                     placeholder="새 비밀번호 입력"
@@ -1100,8 +1133,7 @@ export default function TripBudgetPage() {
           <DraggablePanel className="max-w-sm rounded-2xl bg-white p-6 shadow-lg">
             <div className="text-lg font-bold text-slate-900">비밀번호 입력</div>
             <p className="mt-2 text-sm text-slate-500">공유 링크에 설정된 비밀번호를 입력해 주세요.</p>
-            <input
-              type="password"
+            <PasswordInput
               value={sharePassword}
               onChange={(event) => setSharePassword(event.target.value)}
               placeholder="비밀번호"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { sendShareMessage, subscribeShareMessages } from "@/lib/share"
+import { isSelfHostedShareId, sendShareMessage, subscribeShareMessages } from "@/lib/share"
 import { DraggablePanel } from "@/components/draggable-panel"
 import type { ShareMessage } from "@/lib/share"
 
@@ -17,10 +17,11 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
   const [messages, setMessages] = useState<ShareMessage[]>([])
   const [draft, setDraft] = useState("")
   const listRef = useRef<HTMLDivElement>(null)
-  const isLocalFallbackClient = Boolean(clientId && clientId.startsWith("local-"))
+  const isLocalFallbackClient = !isSelfHostedShareId(shareId) && Boolean(clientId && clientId.startsWith("local-"))
 
   useEffect(() => {
     if (!isOpen || !shareId) return
+    if (!clientId || isLocalFallbackClient) return
     const unsubscribe = subscribeShareMessages(
       shareId,
       (items) => {
@@ -28,11 +29,13 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
       },
       200,
       (error) => {
-        console.error("Share chat subscription failed", error)
+        if (shouldReportShareChatErrorToConsole(error.code)) {
+          console.error("Share chat subscription failed", error)
+        }
       }
     )
     return () => unsubscribe()
-  }, [isOpen, shareId])
+  }, [isOpen, shareId, clientId, isLocalFallbackClient])
 
   useEffect(() => {
     if (!isOpen || !listRef.current) return
@@ -121,4 +124,8 @@ export function ShareChatModal({ isOpen, shareId, clientId, userName, onClose }:
       </DraggablePanel>
     </div>
   )
+}
+
+function shouldReportShareChatErrorToConsole(code?: string) {
+  return code !== "permission-denied" && code !== "unauthenticated" && code !== "not-found"
 }
