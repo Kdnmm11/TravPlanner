@@ -33,6 +33,23 @@ const subCategories: Record<ScheduleCategory, string[]> = {
   transport: ["항공", "기차", "버스", "지하철", "택시", "렌터카"],
 }
 
+const currencyOptions = [
+  { code: "KRW", label: "원화" },
+  { code: "USD", label: "달러" },
+  { code: "JPY", label: "엔화" },
+  { code: "EUR", label: "유로" },
+  { code: "CNY", label: "위안" },
+  { code: "GBP", label: "파운드" },
+  { code: "CHF", label: "프랑" },
+  { code: "CAD", label: "캐나다달러" },
+  { code: "AUD", label: "호주달러" },
+  { code: "HKD", label: "홍콩달러" },
+  { code: "TWD", label: "대만달러" },
+  { code: "THB", label: "바트" },
+  { code: "VND", label: "동" },
+  { code: "PHP", label: "페소" },
+] as const
+
 const dayOptions = (duration: number) =>
   Array.from({ length: duration }, (_, index) => `Day ${index + 1}`)
 
@@ -265,6 +282,8 @@ export function ScheduleModal({
   const [location, setLocation] = useState("")
   const [arrivalPlace, setArrivalPlace] = useState("")
   const [memo, setMemo] = useState("")
+  const [amount, setAmount] = useState("")
+  const [currency, setCurrency] = useState("KRW")
   const [category, setCategory] = useState<ScheduleCategory>("other")
   const [subCategory, setSubCategory] = useState("")
   const [showEndTime, setShowEndTime] = useState(false)
@@ -295,6 +314,8 @@ export function ScheduleModal({
       setSubCategory(initialData.subCategory)
       setArrivalPlace(initialData.arrivalPlace)
       setMemo(initialData.memo)
+      setAmount(Number.isFinite(initialData.amount) ? String(initialData.amount) : "")
+      setCurrency(initialData.currency || "KRW")
 
       if (initialData.category === "transport") {
         const parsedDep = parseTimeWithDay(initialData.time || "")
@@ -315,6 +336,8 @@ export function ScheduleModal({
       setSubCategory("")
       setArrivalPlace("")
       setMemo("")
+      setAmount("")
+      setCurrency("KRW")
       setShowEndTime(false)
       setTransDepDay(`Day ${currentDayNumber}`)
       setTransDepTime("")
@@ -333,6 +356,8 @@ export function ScheduleModal({
       return
     }
     setTitleError("")
+    const parsedAmount = Number.parseFloat(amount.replace(/,/g, ""))
+    const normalizedAmount = Number.isFinite(parsedAmount) ? parsedAmount : 0
 
     if (category === "transport") {
       const depTime = transDepTime
@@ -350,6 +375,8 @@ export function ScheduleModal({
         memo,
         category,
         subCategory: subCategory || "교통",
+        amount: normalizedAmount,
+        currency,
         arrivalPlace,
         reservationNum: "",
         bookingSource: "",
@@ -370,6 +397,8 @@ export function ScheduleModal({
         memo,
         category,
         subCategory,
+        amount: normalizedAmount,
+        currency,
         arrivalPlace: "",
         reservationNum: "",
         bookingSource: "",
@@ -642,6 +671,33 @@ export function ScheduleModal({
               rows={3}
               className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200 resize-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              예산
+            </label>
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="0"
+                className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-right text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              />
+              <select
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value)}
+                className="w-full rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              >
+                {currencyOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.code} · {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           
           <div className="flex gap-3 pt-4">

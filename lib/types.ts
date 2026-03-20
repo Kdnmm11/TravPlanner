@@ -88,6 +88,8 @@ export interface ScheduleFormData {
   memo: string
   category: ScheduleCategory
   subCategory: string
+  amount: number
+  currency: string
   arrivalPlace: string
   reservationNum: string
   bookingSource: string

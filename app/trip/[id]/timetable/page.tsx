@@ -404,6 +404,8 @@ export default function TripTimeTablePage() {
       memo: "",
       category: "other",
       subCategory: "",
+      amount: 0,
+      currency: "KRW",
       arrivalPlace: "",
       reservationNum: "",
       bookingSource: "",

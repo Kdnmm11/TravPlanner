@@ -709,6 +709,8 @@ export default function TripDetailPage() {
                   category: editingSchedule.category,
                   memo: editingSchedule.memo,
                   subCategory: editingSchedule.subCategory,
+                  amount: editingSchedule.amount,
+                  currency: editingSchedule.currency,
                   arrivalPlace: editingSchedule.arrivalPlace,
                   reservationNum: editingSchedule.reservationNum,
                   bookingSource: editingSchedule.bookingSource,
