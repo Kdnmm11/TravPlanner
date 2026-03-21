@@ -82,12 +82,11 @@ export function ScheduleCard({
     <div
       ref={cardRef}
       onClick={() => setExpanded((prev) => !prev)}
-      className={`rounded-lg border-l-4 border border-slate-200 bg-white px-3 transition-shadow group ${accentClass}`}
+      className={`group overflow-hidden rounded-lg border-l-4 border border-slate-200 bg-white px-3 transition-shadow ${accentClass}`}
       style={{
         paddingTop: basePaddingY + heightOffset / 2,
         paddingBottom: basePaddingY + heightOffset / 2,
         minHeight: baseMinHeight,
-        height: expanded ? "auto" : baseMinHeight,
       }}
     >
       <div className="flex items-center gap-2">
@@ -107,8 +106,14 @@ export function ScheduleCard({
         </div>
       </div>
       <div
-        className={`overflow-hidden transition-all duration-300 ${expanded ? "opacity-100 mt-2" : "opacity-0"}`}
-        style={{ maxHeight: expanded ? expandedMaxHeight : 0 }}
+        className="overflow-hidden"
+        style={{
+          maxHeight: expanded ? expandedMaxHeight : 0,
+          marginTop: expanded ? 8 : 0,
+          opacity: expanded ? 1 : 0,
+          transition:
+            "max-height 200ms ease, margin-top 200ms ease, opacity 280ms ease",
+        }}
       >
         <div className="font-semibold text-slate-600" style={{ fontSize: detailFont }}>
           {locationText ? (
