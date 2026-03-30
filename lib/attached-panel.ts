@@ -1,0 +1,1 @@
+export const ATTACHED_RIGHT_PANEL_GAP = 6

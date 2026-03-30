@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Search, MoreHorizontal, Edit2, Trash2, Plane } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Search, MoreHorizontal, Edit2, Trash2, Plane, ChevronLeft, ChevronRight, Plus, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTravelStore } from "@/lib/store"
 import { DayColumn } from "@/components/day-column"
@@ -13,6 +13,7 @@ import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
 import { PasswordInput } from "@/components/password-input"
+import { TripRouteTransition } from "@/components/trip-route-transition"
 import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
@@ -32,6 +33,11 @@ import {
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import type { Schedule, ScheduleFormData, TripFormData } from "@/lib/types"
+import { formatTripDayLabel, getBaseTripDayCount, getNextTripDayLabel, getTripDayOptions } from "@/lib/trip-day"
+
+const DAY_COLUMN_GAP_PX = 16
+const DAY_COLUMNS_HORIZONTAL_PADDING_PX = 16
+const MIN_DAY_COLUMN_WIDTH_PX = 272
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -46,6 +52,8 @@ export default function TripDetailPage() {
     deleteSchedule,
     updateTrip,
     deleteTrip,
+    addTripExtraDay,
+    removeTripExtraDay,
     getTripDays,
     updateDayInfo,
     exportTripData,
@@ -60,6 +68,11 @@ export default function TripDetailPage() {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(null)
   const [dayInfoModalOpen, setDayInfoModalOpen] = useState(false)
+  const [startDayPickerOpen, setStartDayPickerOpen] = useState(false)
+  const [previewStartViewDay, setPreviewStartViewDay] = useState<number | null>(null)
+  const [isStartViewPreviewDirty, setIsStartViewPreviewDirty] = useState(false)
+  const [dayColumnWidth, setDayColumnWidth] = useState(320)
+  const [visibleDayCount, setVisibleDayCount] = useState(4)
   const [cardWidthOffset] = useState(7)
   const [cardHeightOffset] = useState(3)
   const [cardGap] = useState(5)
@@ -99,12 +112,104 @@ export default function TripDetailPage() {
   const [shareSettingsError, setShareSettingsError] = useState<string | null>(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [isLocalAdmin, setIsLocalAdmin] = useState(false)
+  const startDayPickerRef = useRef<HTMLDivElement | null>(null)
+  const dayColumnsScrollRef = useRef<HTMLDivElement | null>(null)
+  const dayColumnRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const scrollSyncFrameRef = useRef<number | null>(null)
+  const scrollSyncLockRef = useRef(false)
+  const scrollSyncLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const shouldAutoAlignPreviewRef = useRef(false)
   const isAdmin = isLocalAdmin || Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
+  const tripDays = useMemo(() => (trip ? getTripDays(id) : []), [trip, getTripDays, id])
+  const tripDayOptions = useMemo(() => (trip ? getTripDayOptions(trip) : []), [trip])
+  const tripDayLabels = useMemo(() => tripDayOptions.map((option) => option.label), [tripDayOptions])
+  const baseTripDayCount = useMemo(() => (trip ? getBaseTripDayCount(trip) : 1), [trip])
+  const availableStartDays = tripDays.map((day) => day.dayNumber)
+  const availableStartDaysKey = availableStartDays.join(",")
+  const savedStartViewDay =
+    trip && availableStartDays.includes(trip.startViewDay)
+      ? trip.startViewDay
+      : (availableStartDays[0] ?? 1)
+  const currentStartViewDay = previewStartViewDay ?? savedStartViewDay
+  const availableStartDayOptions = useMemo(
+    () => tripDayOptions.filter((option) => availableStartDays.includes(option.dayNumber)),
+    [tripDayOptions, availableStartDays]
+  )
+  const orderedTripDays = useMemo(() => {
+    if (tripDays.length === 0) return []
+    const startIndex = tripDays.findIndex((day) => day.dayNumber === savedStartViewDay)
+    const safeStartIndex = startIndex >= 0 ? startIndex : 0
+    return [
+      ...tripDays.slice(safeStartIndex).map((day) => ({ ...day, isWrapped: false })),
+      ...tripDays.slice(0, safeStartIndex).map((day) => ({ ...day, isWrapped: true })),
+    ]
+  }, [tripDays, savedStartViewDay])
+  const dayColumnsEndSpacerWidth = useMemo(() => {
+    if (orderedTripDays.length === 0) return 0
+    const currentDayIndex = orderedTripDays.findIndex((day) => day.dayNumber === currentStartViewDay)
+    if (currentDayIndex === -1) return 0
+    const maxNaturalLeftIndex = Math.max(0, orderedTripDays.length - visibleDayCount)
+    const overflowColumns = Math.max(0, currentDayIndex - maxNaturalLeftIndex)
+    return overflowColumns * (dayColumnWidth + DAY_COLUMN_GAP_PX)
+  }, [orderedTripDays, currentStartViewDay, visibleDayCount, dayColumnWidth])
+  const selectedDayInfo =
+    trip && dayInfoDayNumber !== null
+      ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber) ?? null
+      : null
+  const scheduleModalInitialData = useMemo(
+    () =>
+      editingSchedule
+        ? {
+            time: editingSchedule.time,
+            endTime: editingSchedule.endTime,
+            title: editingSchedule.title,
+            location: editingSchedule.location,
+            category: editingSchedule.category,
+            memo: editingSchedule.memo,
+            subCategory: editingSchedule.subCategory,
+            amount: editingSchedule.amount,
+            currency: editingSchedule.currency,
+            arrivalPlace: editingSchedule.arrivalPlace,
+            reservationNum: editingSchedule.reservationNum,
+            bookingSource: editingSchedule.bookingSource,
+          }
+        : null,
+    [editingSchedule]
+  )
+  const currentStartViewDayLabel = trip ? formatTripDayLabel(currentStartViewDay, trip) : "Day 1"
+  const isAtFirstStartViewDay = availableStartDays.length > 0 && currentStartViewDay === availableStartDays[0]
+  const hasPendingStartViewDayChange = tripDays.length > 0 && currentStartViewDay !== savedStartViewDay
 
   useEffect(() => {
     if (!activeShare) return
     setShareEnabledState(activeShare.enabled)
   }, [activeShare?.enabled])
+
+  useEffect(() => {
+    if (!trip || tripDays.length === 0) {
+      setPreviewStartViewDay(null)
+      setIsStartViewPreviewDirty(false)
+      setStartDayPickerOpen(false)
+      return
+    }
+
+    if (!isStartViewPreviewDirty) {
+      setPreviewStartViewDay(savedStartViewDay)
+      return
+    }
+
+    if (previewStartViewDay === null || !availableStartDays.includes(previewStartViewDay)) {
+      setPreviewStartViewDay(savedStartViewDay)
+      setIsStartViewPreviewDirty(false)
+    }
+  }, [
+    trip,
+    tripDays.length,
+    savedStartViewDay,
+    isStartViewPreviewDirty,
+    previewStartViewDay,
+    availableStartDaysKey,
+  ])
 
   useEffect(() => {
     if (!shareId || !trip || !effectiveShareId) return
@@ -118,6 +223,131 @@ export default function TripDetailPage() {
     }
     setActiveShare(trip.id, effectiveShareId, shareEnabled, nextRole)
   }, [shareId, trip, effectiveShareId, shareEnabled, isAdmin, activeShare, setActiveShare])
+
+  useEffect(() => {
+    const container = dayColumnsScrollRef.current
+    const target = dayColumnRefs.current[currentStartViewDay]
+    if (!container || !target) return
+    if (!shouldAutoAlignPreviewRef.current) return
+
+    shouldAutoAlignPreviewRef.current = false
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const nextLeft = Math.max(0, container.scrollLeft + (targetRect.left - containerRect.left) - 16)
+    container.scrollTo({
+      left: nextLeft,
+      behavior: "smooth",
+    })
+  }, [currentStartViewDay, orderedTripDays, dayColumnsEndSpacerWidth])
+
+  useEffect(() => {
+    const container = dayColumnsScrollRef.current
+    if (!container || tripDays.length === 0) return
+
+    const syncPreviewStartDayFromScroll = () => {
+      scrollSyncFrameRef.current = null
+      if (scrollSyncLockRef.current) return
+
+      const containerRect = container.getBoundingClientRect()
+      const anchorLeft = containerRect.left + DAY_COLUMNS_HORIZONTAL_PADDING_PX
+
+      let nearestDayNumber: number | null = null
+      let nearestDistance = Number.POSITIVE_INFINITY
+
+      orderedTripDays.forEach((day) => {
+        const node = dayColumnRefs.current[day.dayNumber]
+        if (!node) return
+        const nodeRect = node.getBoundingClientRect()
+        const distance = Math.abs(nodeRect.left - anchorLeft)
+        if (distance < nearestDistance) {
+          nearestDistance = distance
+          nearestDayNumber = day.dayNumber
+        }
+      })
+
+      if (nearestDayNumber === null || nearestDayNumber === currentStartViewDay) return
+      setPreviewStartViewDay(nearestDayNumber)
+      setIsStartViewPreviewDirty(nearestDayNumber !== savedStartViewDay)
+    }
+
+    const handleScroll = () => {
+      if (scrollSyncFrameRef.current !== null) {
+        cancelAnimationFrame(scrollSyncFrameRef.current)
+      }
+      scrollSyncFrameRef.current = requestAnimationFrame(syncPreviewStartDayFromScroll)
+    }
+
+    container.addEventListener("scroll", handleScroll, { passive: true })
+    handleScroll()
+
+    return () => {
+      container.removeEventListener("scroll", handleScroll)
+      if (scrollSyncFrameRef.current !== null) {
+        cancelAnimationFrame(scrollSyncFrameRef.current)
+        scrollSyncFrameRef.current = null
+      }
+    }
+  }, [orderedTripDays, currentStartViewDay, savedStartViewDay, tripDays.length])
+
+  useEffect(() => {
+    const container = dayColumnsScrollRef.current
+    if (!container) return
+
+    const updateColumnWidth = () => {
+      const availableWidth =
+        container.clientWidth - DAY_COLUMNS_HORIZONTAL_PADDING_PX * 2 - DAY_COLUMN_GAP_PX * 3
+      const nextWidth = Math.max(
+        MIN_DAY_COLUMN_WIDTH_PX,
+        Math.floor(availableWidth / 4)
+      )
+      const nextVisibleCount = Math.max(
+        1,
+        Math.floor(
+          (container.clientWidth - DAY_COLUMNS_HORIZONTAL_PADDING_PX * 2 + DAY_COLUMN_GAP_PX) /
+            (nextWidth + DAY_COLUMN_GAP_PX)
+        )
+      )
+      setDayColumnWidth((prev) => (prev === nextWidth ? prev : nextWidth))
+      setVisibleDayCount((prev) => (prev === nextVisibleCount ? prev : nextVisibleCount))
+    }
+
+    updateColumnWidth()
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateColumnWidth()
+    })
+
+    resizeObserver.observe(container)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!startDayPickerOpen) return
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!(event.target instanceof Node)) return
+      if (startDayPickerRef.current?.contains(event.target)) return
+      setStartDayPickerOpen(false)
+    }
+
+    window.addEventListener("mousedown", handlePointerDown)
+    window.addEventListener("touchstart", handlePointerDown)
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown)
+      window.removeEventListener("touchstart", handlePointerDown)
+    }
+  }, [startDayPickerOpen])
+
+  useEffect(() => {
+    return () => {
+      if (scrollSyncLockTimerRef.current) {
+        clearTimeout(scrollSyncLockTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!effectiveShareId) {
@@ -467,6 +697,63 @@ export default function TripDetailPage() {
     router.push("/")
   }
 
+  const lockScrollSync = () => {
+    scrollSyncLockRef.current = true
+    if (scrollSyncLockTimerRef.current) {
+      clearTimeout(scrollSyncLockTimerRef.current)
+    }
+    scrollSyncLockTimerRef.current = setTimeout(() => {
+      scrollSyncLockRef.current = false
+      scrollSyncLockTimerRef.current = null
+    }, 420)
+  }
+
+  const updateStartViewPreview = (dayNumber: number, lockScroll = false) => {
+    if (!trip || !availableStartDays.includes(dayNumber)) return
+    if (lockScroll) {
+      shouldAutoAlignPreviewRef.current = true
+      lockScrollSync()
+    }
+    setPreviewStartViewDay(dayNumber)
+    setIsStartViewPreviewDirty(dayNumber !== savedStartViewDay)
+  }
+
+  const handleRotateStartViewDay = (direction: "prev" | "next") => {
+    if (!trip || availableStartDays.length === 0) return
+    const currentIndex = availableStartDays.findIndex((dayNumber) => dayNumber === currentStartViewDay)
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0
+    if (direction === "prev" && safeIndex === 0) return
+    const nextIndex =
+      direction === "next"
+        ? (safeIndex + 1) % availableStartDays.length
+        : (safeIndex - 1 + availableStartDays.length) % availableStartDays.length
+    updateStartViewPreview(availableStartDays[nextIndex], true)
+  }
+
+  const handleApplyStartViewDay = () => {
+    if (!trip || previewStartViewDay === null || previewStartViewDay === savedStartViewDay) return
+    updateTrip(trip.id, { startViewDay: previewStartViewDay })
+    setIsStartViewPreviewDirty(false)
+  }
+
+  const handleAddExtraDay = (side: "pre" | "post") => {
+    if (!trip) return
+    addTripExtraDay(trip.id, side)
+    if (side === "pre") {
+      const nextPreviewDay = 1 - (trip.preDays + 1)
+      updateStartViewPreview(nextPreviewDay, true)
+    }
+  }
+
+  const handleRemoveExtraDay = (dayNumber: number) => {
+    if (!trip) return
+    if (previewStartViewDay === dayNumber) {
+      const nextPreviewDay = dayNumber <= 0 ? dayNumber + 1 : dayNumber - 1
+      updateStartViewPreview(nextPreviewDay, true)
+    }
+    removeTripExtraDay(trip.id, dayNumber)
+  }
+
   const formatDateRange = (startDate: string, endDate: string) => {
     const start = new Date(startDate)
     const end = new Date(endDate)
@@ -476,10 +763,10 @@ export default function TripDetailPage() {
   return (
     <div
       data-app-shell
-      className="min-h-screen bg-slate-100"
+      className="h-screen overflow-hidden bg-slate-100"
       style={{ "--sidebar-width": "260px" } as Record<string, string>}
     >
-      <div className="grid grid-cols-[var(--sidebar-width)_minmax(0,1fr)]">
+      <div className="grid h-full grid-cols-[var(--sidebar-width)_minmax(0,1fr)] overflow-hidden">
         <aside className="sticky top-0 h-screen border-r border-slate-200 bg-white px-4 py-6">
           <Link href="/" className="mb-8 flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-slate-50">
             <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center">
@@ -624,7 +911,7 @@ export default function TripDetailPage() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex flex-col min-h-screen">
+        <TripRouteTransition className="flex min-h-0 flex-col overflow-hidden">
           {/* Header */}
           <header className="bg-white border-b border-slate-200 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -632,7 +919,119 @@ export default function TripDetailPage() {
                 <h1 className="text-2xl font-bold text-slate-900">{trip.title}</h1>
                 <p className="text-sm text-slate-500 mt-1">{formatDateRange(trip.startDate, trip.endDate)}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {tripDays.length > 0 && (
+                  <div className="flex flex-col items-center rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApplyStartViewDay}
+                      disabled={!hasPendingStartViewDayChange}
+                      className="h-7 rounded-full bg-emerald-500 px-4 text-[11px] font-semibold text-white hover:bg-emerald-600 disabled:bg-emerald-200 disabled:text-white"
+                    >
+                      첫 시작
+                    </Button>
+                    <div ref={startDayPickerRef} className="relative mt-1 flex items-center gap-1">
+                      <div className="relative flex h-7 w-7 items-center justify-center overflow-visible">
+                        {trip.preDays > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExtraDay(1 - trip.preDays)}
+                            className="absolute bottom-full left-1/2 mb-[-2px] flex h-5 w-5 -translate-x-1/2 items-center justify-center text-red-500 transition hover:text-red-600"
+                            aria-label="여행 전 추가 Day 삭제"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleAddExtraDay("pre")}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-500 transition hover:bg-emerald-50 hover:text-emerald-600"
+                          aria-label="여행 전 일정 Day 추가"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRotateStartViewDay("prev")}
+                        disabled={isAtFirstStartViewDay}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full transition ${
+                          isAtFirstStartViewDay
+                            ? "cursor-not-allowed text-slate-300"
+                            : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        }`}
+                        aria-label="이전 시작 Day"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStartDayPickerOpen((open) => !open)}
+                        className="min-w-[84px] rounded-full px-2 py-1 text-center text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                      >
+                        {currentStartViewDayLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRotateStartViewDay("next")}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                        aria-label="다음 시작 Day"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                      <div className="relative flex h-7 w-7 items-center justify-center overflow-visible">
+                        {trip.postDays > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExtraDay(baseTripDayCount + trip.postDays)}
+                            className="absolute bottom-full left-1/2 mb-[-2px] flex h-5 w-5 -translate-x-1/2 items-center justify-center text-red-500 transition hover:text-red-600"
+                            aria-label="여행 후 추가 Day 삭제"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleAddExtraDay("post")}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-500 transition hover:bg-emerald-50 hover:text-emerald-600"
+                          aria-label="여행 후 일정 Day 추가"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {startDayPickerOpen && (
+                        <div className="absolute left-1/2 top-full z-20 mt-2 w-[132px] -translate-x-1/2 overflow-hidden rounded-[24px] border border-slate-200 bg-white p-1.5 shadow-xl">
+                          <div className="space-y-1">
+                            {availableStartDayOptions.map((option) => {
+                              const isSelected = option.dayNumber === currentStartViewDay
+                              const isSavedStartDay = option.dayNumber === savedStartViewDay
+                              return (
+                                <button
+                                  key={option.dayNumber}
+                                  type="button"
+                                  onClick={() => {
+                                    updateStartViewPreview(option.dayNumber, true)
+                                    setStartDayPickerOpen(false)
+                                  }}
+                                  className={`flex w-full items-center justify-center rounded-full border px-3 py-2 text-center transition ${
+                                    isSavedStartDay
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                      : isSelected
+                                        ? "border-emerald-200 bg-white text-emerald-700"
+                                        : "border-transparent bg-white text-slate-700 hover:border-slate-200 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  <span className="text-sm font-semibold">{option.label}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
@@ -681,9 +1080,24 @@ export default function TripDetailPage() {
           </header>
 
           {/* Day Columns */}
-          <div className="flex-1 overflow-x-auto py-6 pl-4">
-            <div className="flex gap-4 h-full">
-              {getTripDays(trip.id).length === 0 ? (
+          <div
+            ref={dayColumnsScrollRef}
+            className="trip-days-scroll flex-1 snap-x snap-proximity overflow-x-auto py-6 min-h-0"
+            style={{
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+              scrollPaddingLeft: `${DAY_COLUMNS_HORIZONTAL_PADDING_PX}px`,
+              scrollPaddingRight: `${DAY_COLUMNS_HORIZONTAL_PADDING_PX}px`,
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <style jsx>{`
+              .trip-days-scroll::-webkit-scrollbar {
+                display: none;
+              }
+            `}</style>
+            <div className="flex w-max min-w-full h-full min-h-full items-stretch gap-4 px-4">
+              {tripDays.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center">
                     <p className="text-slate-500 mb-2">아직 일정이 없습니다</p>
@@ -691,32 +1105,50 @@ export default function TripDetailPage() {
                   </div>
                 </div>
               ) : (
-                getTripDays(trip.id).map((day) => (
-                  <DayColumn
+                orderedTripDays.map((day) => (
+                  <div
                     key={day.dayNumber}
-                    dayNumber={day.dayNumber}
-                    date={day.date}
-                    weekday={day.weekday}
-                    schedules={day.schedules}
-                    city={dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === day.dayNumber)?.city}
-                    accommodation={
-                      dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === day.dayNumber)?.accommodation
-                    }
-                    cardWidthOffset={cardWidthOffset}
-                    cardHeightOffset={cardHeightOffset}
-                    cardGap={cardGap}
-                    textScale={textScale}
-                    categoryScale={categoryScale}
-                    onEditDayInfo={() => handleEditDayInfo(day.dayNumber)}
-                    onAddSchedule={() => handleAddSchedule(day.dayNumber)}
-                    onEditSchedule={(schedule) => handleEditSchedule(day.dayNumber, schedule)}
-                    onDeleteSchedule={(scheduleId) => handleDeleteSchedule(day.dayNumber, scheduleId)}
-                  />
+                    className="snap-start snap-always"
+                    ref={(node) => {
+                      dayColumnRefs.current[day.dayNumber] = node
+                    }}
+                  >
+                    <DayColumn
+                      dayNumber={day.dayNumber}
+                      dayLabel={formatTripDayLabel(day.dayNumber, trip)}
+                      date={day.date}
+                      weekday={day.weekday}
+                      schedules={day.schedules}
+                      isWrapped={day.isWrapped}
+                      isExtraDay={day.dayNumber <= 0 || day.dayNumber > baseTripDayCount}
+                      city={dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === day.dayNumber)?.city}
+                      accommodation={
+                        dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === day.dayNumber)?.accommodation
+                      }
+                      cardWidthOffset={cardWidthOffset}
+                      cardHeightOffset={cardHeightOffset}
+                      cardGap={cardGap}
+                      textScale={textScale}
+                      categoryScale={categoryScale}
+                      columnWidth={dayColumnWidth}
+                      onEditDayInfo={() => handleEditDayInfo(day.dayNumber)}
+                      onAddSchedule={() => handleAddSchedule(day.dayNumber)}
+                      onEditSchedule={(schedule) => handleEditSchedule(day.dayNumber, schedule)}
+                      onDeleteSchedule={(scheduleId) => handleDeleteSchedule(day.dayNumber, scheduleId)}
+                    />
+                  </div>
                 ))
               )}
+              {tripDays.length > 0 && dayColumnsEndSpacerWidth > 0 ? (
+                <div
+                  aria-hidden="true"
+                  className="h-full flex-shrink-0"
+                  style={{ width: `${dayColumnsEndSpacerWidth}px` }}
+                />
+              ) : null}
             </div>
           </div>
-        </main>
+        </TripRouteTransition>
       </div>
 
         {/* Modals */}
@@ -733,24 +1165,9 @@ export default function TripDetailPage() {
           mode={scheduleModalMode}
           tripDuration={getTripDuration()}
           currentDayNumber={selectedDayNumber ?? 1}
-          initialData={
-            editingSchedule
-              ? {
-                  time: editingSchedule.time,
-                  endTime: editingSchedule.endTime,
-                  title: editingSchedule.title,
-                  location: editingSchedule.location,
-                  category: editingSchedule.category,
-                  memo: editingSchedule.memo,
-                  subCategory: editingSchedule.subCategory,
-                  amount: editingSchedule.amount,
-                  currency: editingSchedule.currency,
-                  arrivalPlace: editingSchedule.arrivalPlace,
-                  reservationNum: editingSchedule.reservationNum,
-                  bookingSource: editingSchedule.bookingSource,
-                }
-              : null
-          }
+          currentDayLabel={trip ? formatTripDayLabel(selectedDayNumber ?? 1, trip) : "Day 1"}
+          tripDayOptions={tripDayLabels}
+          initialData={scheduleModalInitialData}
         />
 
         <DayInfoModal
@@ -758,41 +1175,26 @@ export default function TripDetailPage() {
           onClose={() => setDayInfoModalOpen(false)}
           dayNumber={dayInfoDayNumber ?? 1}
           tripDuration={getTripDuration()}
-          initialCity={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.city
-              : ""
-          }
-          initialAccommodation={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.accommodation
-              : ""
-          }
-          initialCheckInDay={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.checkInDay
-              : ""
-          }
-          initialCheckInTime={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.checkInTime
-              : ""
-          }
+          dayLabel={trip ? formatTripDayLabel(dayInfoDayNumber ?? 1, trip) : "Day 1"}
+          dayOptions={tripDayLabels}
+          initialCity={selectedDayInfo?.city ?? ""}
+          initialAccommodation={selectedDayInfo?.accommodation ?? ""}
+          initialAccommodationAmount={selectedDayInfo?.accommodationAmount ?? 0}
+          initialAccommodationCurrency={selectedDayInfo?.accommodationCurrency ?? "KRW"}
+          initialCheckInDay={selectedDayInfo?.checkInDay ?? ""}
+          initialCheckInTime={selectedDayInfo?.checkInTime ?? ""}
           initialCheckOutDay={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.checkOutDay
-              : ""
+            selectedDayInfo?.checkOutDay ??
+            (trip ? getNextTripDayLabel(dayInfoDayNumber ?? 1, trip) : "")
           }
-          initialCheckOutTime={
-            dayInfoDayNumber
-              ? dayInfos.find((info) => info.tripId === trip.id && info.dayNumber === dayInfoDayNumber)?.checkOutTime
-              : ""
-          }
-          onSave={({ city, accommodation, checkInDay, checkInTime, checkOutDay, checkOutTime }) => {
+          initialCheckOutTime={selectedDayInfo?.checkOutTime ?? ""}
+          onSave={({ city, accommodation, accommodationAmount, accommodationCurrency, checkInDay, checkInTime, checkOutDay, checkOutTime }) => {
             if (dayInfoDayNumber === null) return
             updateDayInfo(trip.id, dayInfoDayNumber, {
               city,
               accommodation,
+              accommodationAmount,
+              accommodationCurrency,
               checkInDay,
               checkInTime,
               checkOutDay,
@@ -1006,6 +1408,7 @@ export default function TripDetailPage() {
             </DraggablePanel>
           </div>
         )}
+
       </div>
   )
 }

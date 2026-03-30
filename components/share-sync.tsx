@@ -291,6 +291,64 @@ export function ShareSync({
   useEffect(() => {
     if (!shareId || !tripId) return
     if (!clientId || isLocalFallbackClient) return
+    const sendPayload = (payload: SharePayload, latest: typeof latestRef.current) => {
+      pushInFlightRef.current = true
+      logSync("push-start", "sending payload to firestore")
+      updateShare(shareId, payload)
+        .then(() => {
+          pushInFlightRef.current = false
+          pendingPayloadSignatureRef.current = null
+          logSync("push-success", "payload saved")
+          emitStatus(null)
+          latest.onSync?.("push")
+          const action = describeChange(lastPayloadRef.current, payload)
+          if (action) {
+            const now = Date.now()
+            const last = lastLogRef.current
+            if (!last || last.action !== action || now - last.time > 2000) {
+              if (latest.clientId) {
+                addShareLog(shareId, {
+                  id: Math.random().toString(36).slice(2, 9),
+                  uid: latest.clientId,
+                  user: latest.actorName?.trim() || "익명",
+                  action,
+                  clientTs: Date.now(),
+                }).catch(() => undefined)
+              }
+              lastLogRef.current = { action, time: now }
+            }
+          }
+          lastPayloadRef.current = payload
+        })
+        .catch((error) => {
+          pushInFlightRef.current = false
+          pendingPayloadSignatureRef.current = null
+          console.error("Share update failed", error)
+          const code =
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            typeof (error as { code?: unknown }).code === "string"
+              ? (error as { code: string }).code
+              : undefined
+          const message =
+            typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof (error as { message?: unknown }).message === "string"
+              ? (error as { message: string }).message
+              : undefined
+          logSync("push-error", code || "unknown", "error", message ? { message } : undefined)
+          if (isAuthErrorCode(code)) {
+            syncBlockedRef.current = true
+          }
+          if (isAuthErrorCode(code) || code === "not-found") {
+            latest.onShareDisabled?.(true, null)
+          }
+          emitStatus(toShareErrorMessage(code))
+        })
+    }
+
     const unsubscribe = useTravelStore.subscribe(() => {
       const latest = latestRef.current
       if (applyRemoteRef.current) return
@@ -309,71 +367,35 @@ export function ShareSync({
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null
-        pushInFlightRef.current = true
-        logSync("push-start", "sending payload to firestore")
-        updateShare(shareId, payload)
-          .then(() => {
-            pushInFlightRef.current = false
-            pendingPayloadSignatureRef.current = null
-            logSync("push-success", "payload saved")
-            emitStatus(null)
-            latest.onSync?.("push")
-            const action = describeChange(lastPayloadRef.current, payload)
-            if (action) {
-              const now = Date.now()
-              const last = lastLogRef.current
-              if (!last || last.action !== action || now - last.time > 2000) {
-                if (latest.clientId) {
-                  addShareLog(shareId, {
-                    id: Math.random().toString(36).slice(2, 9),
-                    uid: latest.clientId,
-                    user: latest.actorName?.trim() || "익명",
-                    action,
-                    clientTs: Date.now(),
-                  }).catch(() => undefined)
-                }
-                lastLogRef.current = { action, time: now }
-              }
-            }
-            lastPayloadRef.current = payload
-          })
-          .catch((error) => {
-            pushInFlightRef.current = false
-            pendingPayloadSignatureRef.current = null
-            console.error("Share update failed", error)
-            const code =
-              typeof error === "object" &&
-              error !== null &&
-              "code" in error &&
-              typeof (error as { code?: unknown }).code === "string"
-                ? (error as { code: string }).code
-                : undefined
-            const message =
-              typeof error === "object" &&
-              error !== null &&
-              "message" in error &&
-              typeof (error as { message?: unknown }).message === "string"
-                ? (error as { message: string }).message
-                : undefined
-            logSync("push-error", code || "unknown", "error", message ? { message } : undefined)
-            if (isAuthErrorCode(code)) {
-              syncBlockedRef.current = true
-            }
-            if (isAuthErrorCode(code) || code === "not-found") {
-              latest.onShareDisabled?.(true, null)
-            }
-            emitStatus(toShareErrorMessage(code))
-          })
+        sendPayload(payload, latest)
       }, 100)
     })
     return () => {
-      unsubscribe()
+      const latest = latestRef.current
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current)
+        debounceRef.current = null
+        if (
+          !applyRemoteRef.current &&
+          !syncBlockedRef.current &&
+          shareEnabledRef.current &&
+          (!passwordRequiredRef.current || latest.localPasswordHash || latest.actorRole === "admin") &&
+          !accessDeniedRef.current
+        ) {
+          const payload = latest.exportTripData(tripId)
+          if (payload) {
+            pendingPayloadSignatureRef.current = createPayloadSignature(payload)
+            logSync("push-flush", "flushing pending payload before unmount", "info", {
+              schedules: payload.schedules.length,
+              dayInfos: payload.dayInfos.length,
+              checklistItems: payload.checklistItems.length,
+            })
+            sendPayload(payload, latest)
+          }
+        }
       }
-      debounceRef.current = null
+      unsubscribe()
       pushInFlightRef.current = false
-      pendingPayloadSignatureRef.current = null
     }
   }, [shareId, tripId, clientId, isLocalFallbackClient])
 

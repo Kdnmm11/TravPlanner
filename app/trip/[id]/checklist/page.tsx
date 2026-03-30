@@ -10,6 +10,7 @@ import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
 import { PasswordInput } from "@/components/password-input"
+import { TripRouteTransition } from "@/components/trip-route-transition"
 import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
@@ -646,7 +647,7 @@ export default function TripChecklistPage() {
           )}
         </aside>
 
-        <main className="flex flex-col min-h-screen">
+        <TripRouteTransition className="flex flex-col">
           <header className="bg-white border-b border-slate-200 px-6 py-4">
             <div>
               <h1 className="text-2xl font-bold text-slate-900">체크리스트</h1>
@@ -851,7 +852,7 @@ export default function TripChecklistPage() {
               </button>
             </div>
           </div>
-        </main>
+        </TripRouteTransition>
       </div>
 
       {itemAddOpen && (

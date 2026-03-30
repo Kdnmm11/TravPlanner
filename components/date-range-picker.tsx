@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import { ChevronLeft, ChevronRight, Calendar, X } from "lucide-react"
+import { ATTACHED_RIGHT_PANEL_GAP } from "@/lib/attached-panel"
 
 interface DateRangePickerProps {
   startDate: string
@@ -10,6 +11,7 @@ interface DateRangePickerProps {
   onDateChange: (startDate: string, endDate: string) => void
   onOpenChange?: (isOpen: boolean) => void
   anchorRef?: RefObject<HTMLElement | null>
+  portalHostRef?: RefObject<HTMLElement | null>
 }
 
 export function DateRangePicker({
@@ -18,6 +20,7 @@ export function DateRangePicker({
   onDateChange,
   onOpenChange,
   anchorRef,
+  portalHostRef,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
@@ -32,6 +35,7 @@ export function DateRangePicker({
     left: 0,
     width: 520,
   }))
+  const [canAttach, setCanAttach] = useState(false)
 
   const daysOfWeek = ["일", "월", "화", "수", "목", "금", "토"]
   const months = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"]
@@ -244,7 +248,26 @@ export function DateRangePicker({
   )
 
   useEffect(() => {
+    if (!isOpen) {
+      setCanAttach(false)
+      return
+    }
+
+    const updateAttachMode = () => {
+      if (typeof window === "undefined") return
+      const requiredWidth = 448 + ATTACHED_RIGHT_PANEL_GAP + 520 + 48
+      setCanAttach(Boolean(portalHostRef?.current) && window.innerWidth >= requiredWidth)
+    }
+
+    updateAttachMode()
+    window.addEventListener("resize", updateAttachMode)
+    return () => window.removeEventListener("resize", updateAttachMode)
+  }, [isOpen, portalHostRef])
+
+  useEffect(() => {
     if (!isOpen) return
+
+    if (canAttach) return
 
     const viewportPadding = 16
     const popupGap = 12
@@ -303,6 +326,92 @@ export function DateRangePicker({
     }
   }, [isOpen])
 
+  const popupContent = (
+    <div
+      ref={popupRef}
+      className={
+        canAttach
+          ? "absolute top-1/2 z-[70] w-[520px] -translate-y-1/2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-left-8 duration-200"
+          : "fixed z-[80] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+      }
+      style={
+        canAttach
+          ? { left: `calc(100% + ${ATTACHED_RIGHT_PANEL_GAP}px)` }
+          : { top: popupStyle.top, left: popupStyle.left, width: popupStyle.width }
+      }
+    >
+      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
+        <div className="text-xs font-medium text-slate-600">
+          출발일 선택 후 도착일을 선택하세요
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+        <button
+          type="button"
+          onClick={goToPreviousMonth}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="text-center text-sm font-medium text-slate-700">
+          {currentMonth.getFullYear()}년 {months[currentMonth.getMonth()]} - {nextMonth.getFullYear()}년{" "}
+          {months[nextMonth.getMonth()]}
+        </div>
+        <button
+          type="button"
+          onClick={goToNextMonth}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="p-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
+          {renderCalendarMonth(currentMonth, daysCurrentMonth)}
+          {renderCalendarMonth(nextMonth, daysNextMonth)}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => {
+            onDateChange("", "")
+            setSelectingStart(true)
+          }}
+          className="text-xs text-slate-500 transition-colors hover:text-slate-700"
+        >
+          초기화
+        </button>
+        <div className="flex items-center gap-2">
+          {startDate && endDate && (
+            <span className="text-xs font-medium text-emerald-600">
+              {getDayCount() - 1}박 {getDayCount()}일
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            disabled={!startDate || !endDate}
+            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div ref={containerRef} className="relative">
       {/* Date Input Trigger */}
@@ -345,89 +454,11 @@ export function DateRangePicker({
       </button>
 
       {/* Calendar Popup */}
-      {isOpen && (
+      {isOpen &&
         createPortal(
-          <div
-            ref={popupRef}
-            className="fixed z-[80] bg-white shadow-2xl border border-slate-200 overflow-hidden rounded-xl"
-            style={{ top: popupStyle.top, left: popupStyle.left, width: popupStyle.width }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50">
-              <div className="text-xs font-medium text-slate-600">
-                출발일 선택 후 도착일을 선택하세요
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                onPointerDown={(event) => event.stopPropagation()}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Navigation */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
-              <button
-                type="button"
-                onClick={goToPreviousMonth}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-600 transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <div className="text-sm font-medium text-slate-700 text-center">
-                {currentMonth.getFullYear()}년 {months[currentMonth.getMonth()]} - {nextMonth.getFullYear()}년 {months[nextMonth.getMonth()]}
-              </div>
-              <button
-                type="button"
-                onClick={goToNextMonth}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-600 transition-colors"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Calendars */}
-            <div className="p-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                {renderCalendarMonth(currentMonth, daysCurrentMonth)}
-                {renderCalendarMonth(nextMonth, daysNextMonth)}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100 bg-slate-50">
-              <button
-                type="button"
-                onClick={() => {
-                  onDateChange("", "")
-                  setSelectingStart(true)
-                }}
-                className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
-              >
-                초기화
-              </button>
-              <div className="flex items-center gap-2">
-                {startDate && endDate && (
-                  <span className="text-xs text-emerald-600 font-medium">
-                    {getDayCount() - 1}박 {getDayCount()}일
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  disabled={!startDate || !endDate}
-                  className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg hover:bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-                >
-                  확인
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )
-      )}
+          popupContent,
+          canAttach && portalHostRef?.current ? portalHostRef.current : document.body
+        )}
     </div>
   )
 }

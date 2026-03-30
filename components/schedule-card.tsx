@@ -1,13 +1,16 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { MapPin } from "lucide-react"
 
 interface ScheduleCardProps {
   time: string
+  endTime?: string
   title: string
   location: string
   memo?: string
   category?: "food" | "activity" | "transport" | "accommodation" | "other"
+  subCategory?: string
   arrivalPlace?: string
   heightOffset?: number
   textScale?: number
@@ -41,12 +44,16 @@ const getAccentClass = (category: keyof typeof categoryLabels, seed: string) => 
   return palette[hash % palette.length]
 }
 
+const TITLE_INDENT_PX = 2
+
 export function ScheduleCard({
   time,
+  endTime,
   title,
   location,
   memo,
   category = "activity",
+  subCategory,
   arrivalPlace,
   heightOffset = 0,
   textScale = 1,
@@ -54,6 +61,11 @@ export function ScheduleCard({
   onEdit,
   onDelete,
 }: ScheduleCardProps) {
+  const displayTime = time.trim().split(" ")[0]
+  const displayEndTime = endTime?.trim().split(" ")[0] ?? ""
+  const hasEndTime = Boolean(displayEndTime)
+  const normalizedSubCategory = subCategory?.trim() ?? ""
+  const hasSubCategory = normalizedSubCategory.length > 0
   const normalizedLocation = (location ?? "").trim()
   const normalizedArrivalPlace = arrivalPlace?.trim() ?? ""
   const normalizedMemo = memo?.trim() ?? ""
@@ -65,13 +77,14 @@ export function ScheduleCard({
   const accentClass = getAccentClass(category, `${time}-${title}`)
   const [expanded, setExpanded] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
-  const basePaddingY = 14
+  const basePaddingTop = 8
+  const basePaddingBottom = 8
   const timeFont = 16 * textScale
-  const titleFont = 14 * textScale
+  const titleFont = 15.4 * textScale
   const categoryFont = 12 * categoryScale
   const detailFont = 14 * textScale
-  const expandedMaxHeight = 128 + heightOffset
-  const baseMinHeight = 68 + heightOffset
+  const expandedMaxHeight = 96 + heightOffset
+  const baseMinHeight = 82 + heightOffset
 
   useEffect(() => {
     if (!expanded || !cardRef.current) return
@@ -84,26 +97,83 @@ export function ScheduleCard({
       onClick={() => setExpanded((prev) => !prev)}
       className={`group overflow-hidden rounded-lg border-l-4 border border-slate-200 bg-white px-3 transition-shadow ${accentClass}`}
       style={{
-        paddingTop: basePaddingY + heightOffset / 2,
-        paddingBottom: basePaddingY + heightOffset / 2,
+        paddingTop: basePaddingTop + heightOffset / 2,
+        paddingBottom: basePaddingBottom + heightOffset / 2,
         minHeight: baseMinHeight,
       }}
     >
-      <div className="flex items-center gap-2">
-        <span className="font-bold text-emerald-600" style={{ fontSize: timeFont }}>
-          {time}
-        </span>
-        <span className="min-w-0 flex-1 font-bold text-slate-900 truncate" style={{ fontSize: titleFont }}>
-          {title}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <span
-            className="font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
-            style={{ fontSize: categoryFont }}
+      {hasEndTime ? (
+        <div>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 font-bold text-emerald-600" style={{ fontSize: timeFont }}>
+              {displayTime} - {displayEndTime}
+            </div>
+            <div className="ml-auto flex items-center gap-1">
+              <span
+                className="font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700"
+                style={{ fontSize: categoryFont }}
+              >
+                {categoryLabels[category]}
+              </span>
+              {hasSubCategory ? (
+                <span
+                  className="font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                  style={{ fontSize: categoryFont }}
+                >
+                  {normalizedSubCategory}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div
+            className="mt-1 truncate font-bold text-slate-900"
+            style={{ fontSize: titleFont, paddingLeft: TITLE_INDENT_PX }}
           >
-            {categoryLabels[category]}
-          </span>
+            {title}
+          </div>
         </div>
+      ) : (
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-emerald-600" style={{ fontSize: timeFont }}>
+                {displayTime}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-bold text-slate-900" style={{ fontSize: titleFont }}>
+                {title}
+              </span>
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-1">
+            <span
+              className="font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700"
+              style={{ fontSize: categoryFont }}
+            >
+              {categoryLabels[category]}
+            </span>
+            {hasSubCategory ? (
+              <span
+                className="font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                style={{ fontSize: categoryFont }}
+              >
+                {normalizedSubCategory}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )}
+      <div className="mt-1 font-semibold text-slate-600" style={{ fontSize: detailFont }}>
+        {locationText ? (
+          <div className="ml-[-3px] flex items-center gap-1.5 truncate">
+            <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
+            <span className="truncate">{locationText}</span>
+          </div>
+        ) : (
+          <div className="ml-[-3px] flex items-center gap-1.5 text-slate-400">
+            <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
+            <span>장소 미정</span>
+          </div>
+        )}
       </div>
       <div
         className="overflow-hidden"
@@ -112,16 +182,9 @@ export function ScheduleCard({
           marginTop: expanded ? 8 : 0,
           opacity: expanded ? 1 : 0,
           transition:
-            "max-height 200ms ease, margin-top 200ms ease, opacity 280ms ease",
+            "max-height 240ms ease, margin-top 240ms ease, opacity 336ms ease",
         }}
       >
-        <div className="font-semibold text-slate-600" style={{ fontSize: detailFont }}>
-          {locationText ? (
-            <div className="truncate">{locationText}</div>
-          ) : (
-            <div className="text-slate-400">장소 미정</div>
-          )}
-        </div>
         <div className="mt-1 font-semibold text-slate-500" style={{ fontSize: detailFont }}>
           {normalizedMemo || "메모 없음"}
         </div>

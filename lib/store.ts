@@ -15,6 +15,7 @@ import type {
   BudgetFormData,
 } from "./types"
 import { addDebugLog } from "./debug-log"
+import { getBaseTripDayCount, parseTripDayLabel } from "./trip-day"
 
 interface TravelStore {
   trips: Trip[]
@@ -30,6 +31,8 @@ interface TravelStore {
   addTrip: (trip: TripFormData) => void
   updateTrip: (id: string, updates: Partial<Trip>) => void
   deleteTrip: (id: string) => void
+  addTripExtraDay: (tripId: string, side: "pre" | "post") => void
+  removeTripExtraDay: (tripId: string, dayNumber: number) => void
   selectTrip: (id: string | null) => void
   setActiveShare: (tripId: string, shareId: string, enabled: boolean, role: "admin" | "member") => void
   setActiveShareEnabled: (tripId: string, enabled: boolean) => void
@@ -279,6 +282,93 @@ export const useTravelStore = create<TravelStore>()(
           }
         }),
 
+      addTripExtraDay: (tripId, side) =>
+        set((state) => ({
+          trips: state.trips.map((trip) =>
+            trip.id !== tripId
+              ? trip
+              : {
+                  ...trip,
+                  preDays: side === "pre" ? trip.preDays + 1 : trip.preDays,
+                  postDays: side === "post" ? trip.postDays + 1 : trip.postDays,
+                }
+          ),
+        })),
+
+      removeTripExtraDay: (tripId, dayNumber) =>
+        set((state) => {
+          const trip = state.trips.find((item) => item.id === tripId)
+          if (!trip) return {}
+
+          const baseTripDayCount = getBaseTripDayCount(trip)
+          const isBeforeTrip = dayNumber <= 0
+          const isAfterTrip = dayNumber > baseTripDayCount
+
+          if ((!isBeforeTrip || trip.preDays <= 0) && (!isAfterTrip || trip.postDays <= 0)) {
+            return {}
+          }
+
+          const nextTrips = state.trips.map((item) => {
+            if (item.id !== tripId) return item
+            return {
+              ...item,
+              preDays: isBeforeTrip ? Math.max(0, item.preDays - 1) : item.preDays,
+              postDays: isAfterTrip ? Math.max(0, item.postDays - 1) : item.postDays,
+            }
+          })
+
+          const shiftDayNumber = (value: number) => {
+            if (isBeforeTrip) {
+              if (value < dayNumber) return value + 1
+              return value
+            }
+            if (isAfterTrip) {
+              if (value > dayNumber) return value - 1
+              return value
+            }
+            return value
+          }
+
+          const shiftStoredLabel = (value: string) => {
+            if (!value.trim()) return value
+            const parsed = parseTripDayLabel(value, trip)
+            if (parsed === null) return value
+            const shifted = shiftDayNumber(parsed)
+            return shifted === parsed ? value : value.replace(/Day\s*[+-]?\d+/i, (() => {
+              if (shifted <= 0) return `Day ${shifted - 1}`
+              if (shifted > baseTripDayCount) return `Day +${shifted - baseTripDayCount}`
+              return `Day ${shifted}`
+            })())
+          }
+
+          return {
+            trips: nextTrips,
+            schedules: state.schedules
+              .filter((schedule) => !(schedule.tripId === tripId && schedule.dayNumber === dayNumber))
+              .map((schedule) =>
+                schedule.tripId === tripId
+                  ? { ...schedule, dayNumber: shiftDayNumber(schedule.dayNumber) }
+                  : schedule
+              ),
+            dayInfos: state.dayInfos
+              .filter((info) => !(info.tripId === tripId && info.dayNumber === dayNumber))
+              .map((info) =>
+                info.tripId === tripId
+                  ? {
+                      ...info,
+                      dayNumber: shiftDayNumber(info.dayNumber),
+                      accommodationBudgetOwnerDay:
+                        typeof info.accommodationBudgetOwnerDay === "number"
+                          ? shiftDayNumber(info.accommodationBudgetOwnerDay)
+                          : info.accommodationBudgetOwnerDay,
+                      checkInDay: shiftStoredLabel(info.checkInDay),
+                      checkOutDay: shiftStoredLabel(info.checkOutDay),
+                    }
+                  : info
+              ),
+          }
+        }),
+
       selectTrip: (id) => set({ selectedTripId: id }),
       setActiveShare: (tripId, shareId, enabled, role) =>
         set((state) => ({
@@ -386,12 +476,8 @@ export const useTravelStore = create<TravelStore>()(
 
       updateDayInfo: (tripId, dayNumber, updates) =>
         set((state) => {
-          const parseDayNumber = (value: string) => {
-            const match = value.match(/\d+/)
-            if (!match) return null
-            const number = Number.parseInt(match[0], 10)
-            return Number.isFinite(number) ? number : null
-          }
+          const trip = state.trips.find((item) => item.id === tripId)
+          if (!trip) return {}
 
           const dayInfos = [...state.dayInfos]
           const index = dayInfos.findIndex((info) => info.tripId === tripId && info.dayNumber === dayNumber)
@@ -404,6 +490,9 @@ export const useTravelStore = create<TravelStore>()(
                   dayNumber,
                   city: "",
                   accommodation: "",
+                  accommodationAmount: 0,
+                  accommodationCurrency: "KRW",
+                  accommodationBudgetOwnerDay: dayNumber,
                   checkInDay: "",
                   checkInTime: "",
                   checkOutDay: "",
@@ -417,8 +506,16 @@ export const useTravelStore = create<TravelStore>()(
             dayInfos.push(nextInfo)
           }
 
-          const startDay = parseDayNumber(nextInfo.checkInDay)
-          const endDay = parseDayNumber(nextInfo.checkOutDay)
+          const startDay = parseTripDayLabel(nextInfo.checkInDay, trip)
+          const endDay = parseTripDayLabel(nextInfo.checkOutDay, trip)
+          const budgetOwnerDay = startDay ?? dayNumber
+          nextInfo.accommodationBudgetOwnerDay = budgetOwnerDay
+          if (!nextInfo.accommodationCurrency) {
+            nextInfo.accommodationCurrency = "KRW"
+          }
+          if (!Number.isFinite(nextInfo.accommodationAmount)) {
+            nextInfo.accommodationAmount = 0
+          }
           if (startDay !== null && endDay !== null && startDay < endDay && nextInfo.accommodation.trim()) {
             for (let i = startDay; i < endDay; i += 1) {
               if (i === dayNumber) continue
@@ -432,6 +529,9 @@ export const useTravelStore = create<TravelStore>()(
                       dayNumber: i,
                       city: "",
                       accommodation: "",
+                      accommodationAmount: 0,
+                      accommodationCurrency: "KRW",
+                      accommodationBudgetOwnerDay: budgetOwnerDay,
                       checkInDay: "",
                       checkInTime: "",
                       checkOutDay: "",
@@ -441,6 +541,9 @@ export const useTravelStore = create<TravelStore>()(
               const syncedInfo = {
                 ...targetInfo,
                 accommodation: nextInfo.accommodation,
+                accommodationAmount: nextInfo.accommodationAmount,
+                accommodationCurrency: nextInfo.accommodationCurrency,
+                accommodationBudgetOwnerDay: budgetOwnerDay,
                 checkInDay: nextInfo.checkInDay,
                 checkInTime: nextInfo.checkInTime,
                 checkOutDay: nextInfo.checkOutDay,

@@ -20,7 +20,7 @@ interface BudgetAddModalProps {
 
 const categories: { value: ScheduleCategory; label: string }[] = [
   { value: "other", label: "기타" },
-  { value: "transport", label: "이동" },
+  { value: "transport", label: "교통" },
   { value: "activity", label: "관광" },
   { value: "food", label: "식사" },
   { value: "accommodation", label: "숙소" },

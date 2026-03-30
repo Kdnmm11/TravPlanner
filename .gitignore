@@ -6,9 +6,15 @@
 # next.js
 /.next/
 /out/
+/.data/
 
 # production
 /build
+
+# local OS / Python cache
+.DS_Store
+__pycache__/
+*.pyc
 
 # debug
 npm-debug.log*

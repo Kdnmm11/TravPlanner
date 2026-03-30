@@ -37,6 +37,9 @@ export interface DayInfo {
   dayNumber: number
   city: string
   accommodation: string
+  accommodationAmount?: number
+  accommodationCurrency?: string
+  accommodationBudgetOwnerDay?: number
   checkInDay: string
   checkInTime: string
   checkOutDay: string

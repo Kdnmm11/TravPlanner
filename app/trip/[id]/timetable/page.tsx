@@ -7,12 +7,13 @@ import { ArrowRight, Home, MapPin, Plane } from "lucide-react"
 import { useTravelStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { ensureAuthUid } from "@/lib/firebase"
-import type { Schedule, ScheduleFormData } from "@/lib/types"
+import type { Schedule, ScheduleFormData, Trip } from "@/lib/types"
 import { ScheduleModal } from "@/components/schedule-modal"
 import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
 import { PasswordInput } from "@/components/password-input"
+import { TripRouteTransition } from "@/components/trip-route-transition"
 import {
   banShareMember,
   hashPassword,
@@ -28,12 +29,14 @@ import {
   setStoredShareName,
   setStoredSharePasswordHash,
 } from "@/lib/share-local"
+import { formatTripDayLabel, getTripDayOptions, parseTripDayLabel } from "@/lib/trip-day"
 
 const hourHeightDefault = 56
 const timeLabelWidth = 56
 const dayHeaderHeight = 40
 const infoHeaderHeight = 36
 const gridTopGapMinutes = 10
+const TIMETABLE_POPUP_TRANSITION_MS = 220
 
 const categoryLabels: Record<string, string> = {
   food: "식사",
@@ -64,14 +67,15 @@ const fromMinutes = (minutes: number) => {
   return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
 }
 
-const parseEndDay = (endTime: string, startDay: number) => {
-  const match = endTime.match(/\(Day\s+(\d+)\)/)
-  return match ? Number.parseInt(match[1], 10) || startDay : startDay
+const parseEndDay = (endTime: string, startDay: number, trip: Pick<Trip, "startDate" | "endDate">) => {
+  const match = endTime.match(/\((Day\s+[+-]?\d+)\)/)
+  if (!match) return startDay
+  return parseTripDayLabel(match[1], trip) ?? startDay
 }
 
-const getScheduleRange = (schedule: Schedule) => {
+const getScheduleRange = (schedule: Schedule, trip: Pick<Trip, "startDate" | "endDate">) => {
   const startDay = schedule.dayNumber
-  const endDay = schedule.endTime ? parseEndDay(schedule.endTime, startDay) : startDay
+  const endDay = schedule.endTime ? parseEndDay(schedule.endTime, startDay, trip) : startDay
   return { startDay, endDay }
 }
 
@@ -84,8 +88,12 @@ const formatCityText = (value?: string) => {
   return cities.length === 0 ? "-" : cities.join(" > ")
 }
 
-const getScheduleTimesForDay = (schedule: Schedule, dayNumber: number) => {
-  const { startDay, endDay } = getScheduleRange(schedule)
+const getScheduleTimesForDay = (
+  schedule: Schedule,
+  dayNumber: number,
+  trip: Pick<Trip, "startDate" | "endDate">
+) => {
+  const { startDay, endDay } = getScheduleRange(schedule, trip)
   const startMinutes = dayNumber > startDay ? 0 : toMinutes(schedule.time || "00:00")
   let endMinutes = startMinutes + 60
 
@@ -126,11 +134,19 @@ export default function TripTimeTablePage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const columnsRef = useRef<HTMLDivElement>(null)
   const timeLabelRef = useRef<HTMLDivElement>(null)
+  const timetableFrameRef = useRef<HTMLDivElement>(null)
 
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
   const [initialSchedule, setInitialSchedule] = useState<ScheduleFormData | null>(null)
   const [selectedDayNumber, setSelectedDayNumber] = useState(1)
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
+  const [selectedScheduleCard, setSelectedScheduleCard] = useState<{ id: string; dayNumber: number } | null>(null)
+  const [renderedSchedulePopupCard, setRenderedSchedulePopupCard] = useState<{ id: string; dayNumber: number } | null>(null)
+  const [isSchedulePopupVisible, setIsSchedulePopupVisible] = useState(false)
+  const [selectedSchedulePopupLayout, setSelectedSchedulePopupLayout] = useState<{
+    left: number
+    top: number
+    width: number
+  } | null>(null)
   const [selectedDayInfoNumber, setSelectedDayInfoNumber] = useState<number | null>(null)
   const [dragState, setDragState] = useState<{
     id: string
@@ -173,7 +189,10 @@ export default function TripTimeTablePage() {
   const [shareSettingsError, setShareSettingsError] = useState<string | null>(null)
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [isLocalAdmin, setIsLocalAdmin] = useState(false)
+  const schedulePopupCloseTimerRef = useRef<number | null>(null)
+  const schedulePopupFrameRef = useRef<number | null>(null)
   const isAdmin = isLocalAdmin || Boolean(clientId && shareOwnerId && clientId === shareOwnerId)
+  const tripDayLabels = useMemo(() => (trip ? getTripDayOptions(trip).map((option) => option.label) : []), [trip])
 
   useEffect(() => {
     if (!activeShare) return
@@ -405,7 +424,7 @@ export default function TripTimeTablePage() {
     if (!trip) return { startHour: 8, endHour: 24 }
     const weekDays = new Set(weekMeta.map((day) => day.dayNumber))
     const visibleSchedules = schedules.filter((schedule) => schedule.tripId === trip.id).filter((schedule) => {
-      const range = getScheduleRange(schedule)
+      const range = getScheduleRange(schedule, trip)
       for (let day = range.startDay; day <= range.endDay; day += 1) {
         if (weekDays.has(day)) return true
       }
@@ -425,6 +444,125 @@ export default function TripTimeTablePage() {
     const finalStart = minHour < 8 ? Math.max(0, minHour) : 8
     return { startHour: finalStart, endHour: 24 }
   }, [trip, schedules, weekMeta])
+
+  const selectedSchedule = useMemo(
+    () => schedules.find((schedule) => schedule.id === renderedSchedulePopupCard?.id) ?? null,
+    [schedules, renderedSchedulePopupCard]
+  )
+
+  useEffect(() => {
+    if (schedulePopupCloseTimerRef.current !== null) {
+      window.clearTimeout(schedulePopupCloseTimerRef.current)
+      schedulePopupCloseTimerRef.current = null
+    }
+    if (schedulePopupFrameRef.current !== null) {
+      window.cancelAnimationFrame(schedulePopupFrameRef.current)
+      schedulePopupFrameRef.current = null
+    }
+
+    if (selectedScheduleCard) {
+      setRenderedSchedulePopupCard(selectedScheduleCard)
+      setIsSchedulePopupVisible(false)
+      schedulePopupFrameRef.current = window.requestAnimationFrame(() => {
+        schedulePopupFrameRef.current = window.requestAnimationFrame(() => {
+          setIsSchedulePopupVisible(true)
+          schedulePopupFrameRef.current = null
+        })
+      })
+      return () => {
+        if (schedulePopupCloseTimerRef.current !== null) {
+          window.clearTimeout(schedulePopupCloseTimerRef.current)
+          schedulePopupCloseTimerRef.current = null
+        }
+        if (schedulePopupFrameRef.current !== null) {
+          window.cancelAnimationFrame(schedulePopupFrameRef.current)
+          schedulePopupFrameRef.current = null
+        }
+      }
+    }
+
+    if (renderedSchedulePopupCard) {
+      setIsSchedulePopupVisible(false)
+      schedulePopupCloseTimerRef.current = window.setTimeout(() => {
+        setRenderedSchedulePopupCard(null)
+        setSelectedSchedulePopupLayout(null)
+        schedulePopupCloseTimerRef.current = null
+      }, TIMETABLE_POPUP_TRANSITION_MS)
+    }
+
+    return () => {
+      if (schedulePopupCloseTimerRef.current !== null) {
+        window.clearTimeout(schedulePopupCloseTimerRef.current)
+        schedulePopupCloseTimerRef.current = null
+      }
+      if (schedulePopupFrameRef.current !== null) {
+        window.cancelAnimationFrame(schedulePopupFrameRef.current)
+        schedulePopupFrameRef.current = null
+      }
+    }
+  }, [selectedScheduleCard, renderedSchedulePopupCard])
+
+  useEffect(() => {
+    if (!selectedScheduleCard || !columnsRef.current || !timetableFrameRef.current) {
+      return
+    }
+
+    const updatePopupLayout = () => {
+      if (!columnsRef.current || !timetableFrameRef.current) return
+
+      const cardNode = Array.from(
+        columnsRef.current.querySelectorAll<HTMLElement>("[data-schedule-card-id][data-schedule-card-day]")
+      ).find(
+        (node) =>
+          node.dataset.scheduleCardId === selectedScheduleCard.id &&
+          Number(node.dataset.scheduleCardDay) === selectedScheduleCard.dayNumber
+      )
+
+      if (!cardNode) {
+        setSelectedSchedulePopupLayout(null)
+        return
+      }
+
+      const frameRect = timetableFrameRef.current.getBoundingClientRect()
+      const cardRect = cardNode.getBoundingClientRect()
+      const estimatedPopupHeight = 252
+      const cardTop = cardRect.top - frameRect.top
+      const cardBottom = cardRect.bottom - frameRect.top
+      const cardMid = cardTop + cardRect.height / 2
+      const cardCenterX = cardRect.left - frameRect.left + cardRect.width / 2
+      const placeBelow = cardMid < frameRect.height / 2
+      const width = Math.min(320, Math.max(cardRect.width + 24, 248))
+      const left = Math.max(8, Math.min(cardCenterX - width / 2, frameRect.width - width - 8))
+      const top = placeBelow
+        ? Math.min(cardBottom + 2, frameRect.height - estimatedPopupHeight - 8)
+        : Math.max(8, cardTop - estimatedPopupHeight - 2)
+
+      setSelectedSchedulePopupLayout({ left, top, width })
+    }
+
+    updatePopupLayout()
+
+    const scrollNode = scrollRef.current
+    const handleReposition = () => updatePopupLayout()
+    scrollNode?.addEventListener("scroll", handleReposition)
+    window.addEventListener("resize", handleReposition)
+
+    return () => {
+      scrollNode?.removeEventListener("scroll", handleReposition)
+      window.removeEventListener("resize", handleReposition)
+    }
+  }, [selectedScheduleCard, schedules, weekMeta])
+
+  const selectedScheduleTimeRange = selectedSchedule
+    ? selectedSchedule.endTime
+      ? `${selectedSchedule.time} - ${selectedSchedule.endTime.split(" ")[0]}`
+      : selectedSchedule.time
+    : ""
+  const selectedScheduleDetailLabel = selectedSchedule?.category === "transport" ? "이동" : "장소"
+  const selectedScheduleLocationSummary =
+    selectedSchedule?.category === "transport" && selectedSchedule.arrivalPlace?.trim()
+      ? `${(selectedSchedule.location ?? "").trim()} > ${selectedSchedule.arrivalPlace.trim()}`
+      : (selectedSchedule?.location ?? "").trim() || "장소 미정"
 
   const openAddModal = (slot: { dayNumber: number; minutes: number }) => {
     setSelectedDayNumber(slot.dayNumber)
@@ -502,7 +640,11 @@ export default function TripTimeTablePage() {
     }
 
     if (!dragMovedRef.current) {
-      setSelectedScheduleId((prev) => (prev === dragState.id ? null : dragState.id))
+      setSelectedScheduleCard((prev) =>
+        prev?.id === dragState.id && prev?.dayNumber === dragState.originDay
+          ? null
+          : { id: dragState.id, dayNumber: dragState.originDay }
+      )
       setDragState(null)
       setDragPreview(null)
       return
@@ -591,6 +733,17 @@ export default function TripTimeTablePage() {
     document.addEventListener("mousedown", handleClick)
     return () => document.removeEventListener("mousedown", handleClick)
   }, [selectedDayInfoNumber])
+
+  useEffect(() => {
+    if (!selectedScheduleCard) return undefined
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (target.closest("[data-schedule-popup]") || target.closest("[data-schedule-card-id]")) return
+      setSelectedScheduleCard(null)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [selectedScheduleCard])
 
   const handleScrollRight = () => {
     if (!scrollRef.current) return
@@ -856,7 +1009,7 @@ export default function TripTimeTablePage() {
           )}
         </aside>
 
-        <main className="flex flex-col min-h-screen">
+        <TripRouteTransition className="flex flex-col">
           <header
             className="bg-white border-b border-slate-200 px-6 py-4"
             data-timetable-header
@@ -872,7 +1025,7 @@ export default function TripTimeTablePage() {
           <div className="flex-1 px-4 py-4 bg-white">
             <div className="relative">
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-              <div className="relative flex">
+              <div ref={timetableFrameRef} className="relative flex">
                 {showRightFade && (
                   <button
                     type="button"
@@ -924,7 +1077,7 @@ export default function TripTimeTablePage() {
                       const daySchedules = schedules
                         .filter((schedule) => schedule.tripId === trip.id)
                         .filter((schedule) => {
-                          const range = getScheduleRange(schedule)
+                          const range = getScheduleRange(schedule, trip)
                           return day.dayNumber >= range.startDay && day.dayNumber <= range.endDay
                         })
                         .sort((a, b) => toMinutes(a.time || "00:00") - toMinutes(b.time || "00:00"))
@@ -1018,67 +1171,84 @@ export default function TripTimeTablePage() {
                             )}
 
                             {daySchedules.map((schedule) => {
-                              const { startMinutes, endMinutes } = getScheduleTimesForDay(schedule, day.dayNumber)
+                              const { startMinutes, endMinutes } = getScheduleTimesForDay(schedule, day.dayNumber, trip)
                               const start = (dragPreview?.id === schedule.id ? dragPreview.startMinutes : startMinutes)
                               const duration = resizeState?.id === schedule.id ? resizeState.endMinutes - startMinutes : endMinutes - startMinutes
                               const topOffset = gridTopOffset + ((start - startHour * 60) / 60) * hourHeight
                               const height = Math.max(32, (duration / 60) * hourHeight - 2)
-                              const cardMid = topOffset + height / 2
-                              const placeBelow = cardMid < tableHeight / 2
-                              const popupTop = placeBelow ? topOffset + height + 5 : topOffset - 5
                               const timeRange = schedule.endTime
                                 ? `${schedule.time} - ${schedule.endTime.split(" ")[0]}`
                                 : schedule.time
-                              const isSelected = selectedScheduleId === schedule.id
+                              const isSelected =
+                                selectedScheduleCard?.id === schedule.id && selectedScheduleCard?.dayNumber === day.dayNumber
+                              const transportRoute =
+                                schedule.category === "transport" && schedule.arrivalPlace?.trim()
+                                  ? `${(schedule.location ?? "").trim()} > ${schedule.arrivalPlace.trim()}`
+                                  : ""
+                              const canShowTransportRouteOnSecondLine = Boolean(transportRoute) && height >= 58
+                              const isCompactCard = height < 58
+                              const compactBottomPaddingPx = isCompactCard
+                                ? Math.max(7, Math.min(12, Math.round((height - 32) * 0.22) + 7))
+                                : 4
+                              const compactTopPaddingPx = isCompactCard ? Math.max(3, Math.round(compactBottomPaddingPx * 0.45)) : 4
+                              const cardInnerStyle = isCompactCard
+                                ? {
+                                    paddingTop: `${compactTopPaddingPx}px`,
+                                    paddingBottom: `${compactBottomPaddingPx}px`,
+                                  }
+                                : undefined
 
                               return (
                                 <div key={schedule.id}>
                                   <div
-                                    className="absolute left-2 right-2 rounded-lg border border-emerald-400 bg-white text-slate-900 px-2 py-1 text-[11px] leading-tight transition-transform hover:scale-[1.02] hover:shadow-lg"
+                                    data-schedule-card-id={schedule.id}
+                                    data-schedule-card-day={day.dayNumber}
+                                    className={`absolute left-2 right-2 rounded-lg border bg-white text-[11px] leading-tight transition-transform hover:scale-[1.02] hover:shadow-lg ${
+                                      isSelected ? "border-emerald-500 shadow-md" : "border-emerald-400 text-slate-900"
+                                    }`}
                                     style={{ top: `${topOffset}px`, height: `${height}px` }}
                                     onClick={() =>
-                                      setSelectedScheduleId((prev) => (prev === schedule.id ? null : schedule.id))
+                                      setSelectedScheduleCard((prev) =>
+                                        prev?.id === schedule.id && prev?.dayNumber === day.dayNumber
+                                          ? null
+                                          : { id: schedule.id, dayNumber: day.dayNumber }
+                                      )
                                     }
                                   >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-emerald-700 font-semibold truncate">{timeRange}</span>
-                                      <span className="ml-auto inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
-                                        {categoryLabels[schedule.category] ?? schedule.category}
-                                      </span>
+                                    <div
+                                      className={`flex h-full flex-col px-2 ${isCompactCard ? "gap-0.5" : "gap-1 py-1"}`}
+                                      style={cardInnerStyle}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate font-semibold text-emerald-700">{timeRange}</span>
+                                        <span className="ml-auto inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                                          {categoryLabels[schedule.category] ?? schedule.category}
+                                        </span>
+                                      </div>
+                                      {transportRoute ? (
+                                        canShowTransportRouteOnSecondLine ? (
+                                          <div>
+                                            <div className="truncate text-[13px] font-semibold text-slate-900">
+                                              {schedule.title}
+                                            </div>
+                                            <div className="mt-1 truncate text-[11px] font-medium text-slate-400">
+                                              {transportRoute}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="truncate text-[13px]">
+                                            <span className="font-semibold text-slate-900">{schedule.title}</span>
+                                            <span className="ml-2 font-medium text-slate-400">{transportRoute}</span>
+                                          </div>
+                                        )
+                                      ) : (
+                                        <div className="truncate text-[13px] font-semibold text-slate-900">
+                                          {schedule.title}
+                                        </div>
+                                      )}
                                     </div>
-                                    <div className="mt-1 font-semibold truncate text-[12px]">{schedule.title}</div>
                                   </div>
 
-                                  <div
-                                    data-schedule-popup
-                                    className={`absolute left-2 right-2 z-20 rounded-xl border border-emerald-200 bg-white px-3 py-3 text-xs text-slate-700 shadow-lg transition-all duration-300 ${
-                                      isSelected ? "opacity-100 translate-y-0" : "pointer-events-none opacity-0 translate-y-2"
-                                    }`}
-                                    style={{
-                                      top: `${popupTop}px`,
-                                      transform: placeBelow ? "translateY(0)" : "translateY(-100%)",
-                                    }}
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="font-semibold text-emerald-700">{timeRange}</div>
-                                      <button
-                                        type="button"
-                                        className="text-[10px] text-slate-400 hover:text-slate-600"
-                                        onClick={() => setSelectedScheduleId(null)}
-                                      >
-                                        닫기
-                                      </button>
-                                    </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-900">{schedule.title}</div>
-                                    <div className="mt-2 text-[11px] text-slate-500">
-                                      {schedule.category === "transport" && schedule.arrivalPlace?.trim()
-                                        ? `${(schedule.location ?? "").trim()} > ${schedule.arrivalPlace.trim()}`
-                                        : (schedule.location ?? "").trim() || "장소 미정"}
-                                    </div>
-                                    <div className="mt-2 text-[11px] text-slate-400">
-                                      {(schedule.memo ?? "").trim() || "메모 없음"}
-                                    </div>
-                                  </div>
                                 </div>
                               )
                             })}
@@ -1090,11 +1260,61 @@ export default function TripTimeTablePage() {
                     })}
                   </div>
                 </div>
+                {selectedSchedule && selectedSchedulePopupLayout && (
+                  <div
+                    data-schedule-popup
+                    className={`absolute z-30 rounded-[28px] border border-slate-200/90 bg-white/98 px-4 py-4 text-sm text-slate-700 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur-[2px] transition-[opacity,transform] ${
+                      isSchedulePopupVisible ? "opacity-100 translate-y-0 scale-100" : "pointer-events-none opacity-0 translate-y-2 scale-[0.985]"
+                    }`}
+                    style={{
+                      left: `${selectedSchedulePopupLayout.left}px`,
+                      top: `${selectedSchedulePopupLayout.top}px`,
+                      width: `${selectedSchedulePopupLayout.width}px`,
+                      transitionDuration: `${TIMETABLE_POPUP_TRANSITION_MS}ms`,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-[19px] font-semibold tracking-[-0.02em] text-slate-900">
+                          {selectedSchedule.title}
+                        </div>
+                        <div className="mt-2 whitespace-nowrap text-[16px] font-semibold tracking-[-0.02em] text-slate-900">
+                          {selectedScheduleTimeRange}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                          {categoryLabels[selectedSchedule.category] ?? selectedSchedule.category}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                          {selectedScheduleDetailLabel}
+                        </div>
+                        <div className="flex min-h-[42px] items-center rounded-lg bg-slate-100 px-3 py-2">
+                          <div className="text-sm font-medium leading-5 text-slate-500">
+                            {selectedScheduleLocationSummary}
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-slate-400">메모</div>
+                        <div className="min-h-[42px] rounded-lg bg-slate-100 px-3 py-2">
+                          <div className="text-sm leading-5 text-slate-500">
+                            {(selectedSchedule.memo ?? "").trim() || "메모 없음"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
           </div>
-        </main>
+        </TripRouteTransition>
       </div>
 
       <ScheduleModal
@@ -1104,6 +1324,8 @@ export default function TripTimeTablePage() {
         mode="add"
         tripDuration={tripDuration}
         currentDayNumber={selectedDayNumber}
+        currentDayLabel={trip ? formatTripDayLabel(selectedDayNumber, trip) : "Day 1"}
+        tripDayOptions={tripDayLabels}
         initialData={initialSchedule}
       />
 

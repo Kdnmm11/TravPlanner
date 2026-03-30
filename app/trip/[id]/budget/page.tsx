@@ -11,6 +11,7 @@ import { ShareSync } from "@/components/share-sync"
 import { ShareChatModal } from "@/components/share-chat-modal"
 import { DraggablePanel } from "@/components/draggable-panel"
 import { PasswordInput } from "@/components/password-input"
+import { TripRouteTransition } from "@/components/trip-route-transition"
 import { ensureAuthUid } from "@/lib/firebase"
 import {
   banShareMember,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/share"
 import type { ShareLog, ShareMember } from "@/lib/share"
 import type { Schedule } from "@/lib/types"
+import { formatTripDayLabel } from "@/lib/trip-day"
 import {
   clearStoredSharePasswordHash,
   getStoredShareName,
@@ -58,7 +60,7 @@ const currencyUnitMap = {
 const categoryLabels: Record<string, string> = {
   food: "식사",
   activity: "관광",
-  transport: "이동",
+  transport: "교통",
   accommodation: "숙소",
   other: "기타",
 }
@@ -82,6 +84,19 @@ const formatRateValue = (value: number) => {
   return floored.toFixed(0)
 }
 
+type BudgetEntry = {
+  id: string
+  entryType: "schedule" | "accommodation"
+  dayNumber: number
+  time: string
+  title: string
+  memo: string
+  category: Schedule["category"]
+  amount: number
+  currency: string
+  schedule?: Schedule
+}
+
 export default function TripBudgetPage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
@@ -89,6 +104,7 @@ export default function TripBudgetPage() {
   const {
     trips,
     schedules,
+    dayInfos,
     exchangeRates,
     setExchangeRate,
     updateSchedule,
@@ -104,6 +120,70 @@ export default function TripBudgetPage() {
   const tripSchedules = schedules
     .filter((schedule) => schedule.tripId === id)
     .sort((a, b) => (a.dayNumber - b.dayNumber) || a.time.localeCompare(b.time))
+  const tripAccommodationEntries = useMemo<BudgetEntry[]>(() => {
+    const tripDayInfos = dayInfos.filter(
+      (info) => info.tripId === id && (info.accommodationAmount ?? 0) > 0
+    )
+    if (tripDayInfos.length === 0) return []
+
+    const groupedInfos = new Map<string, typeof tripDayInfos>()
+    tripDayInfos.forEach((info) => {
+      const ownerDay = info.accommodationBudgetOwnerDay ?? info.dayNumber
+      const key = [
+        ownerDay,
+        info.accommodation.trim(),
+        info.city.trim(),
+        info.checkInDay.trim(),
+        info.checkInTime.trim(),
+        info.checkOutDay.trim(),
+        info.checkOutTime.trim(),
+        info.accommodationAmount ?? 0,
+        info.accommodationCurrency ?? "KRW",
+      ].join("::")
+      const existing = groupedInfos.get(key) ?? []
+      groupedInfos.set(key, [...existing, info])
+    })
+
+    return Array.from(groupedInfos.values()).map((entries) => {
+      const sortedEntries = [...entries].sort((a, b) => a.dayNumber - b.dayNumber)
+      const ownerDay = sortedEntries[0].accommodationBudgetOwnerDay ?? sortedEntries[0].dayNumber
+      const representative =
+        sortedEntries.find((entry) => entry.dayNumber === ownerDay) ?? sortedEntries[0]
+
+      return {
+        id: `dayinfo-budget-${representative.id}`,
+        entryType: "accommodation",
+        dayNumber: representative.dayNumber,
+        time: representative.checkInTime || representative.checkOutTime || "미정",
+        title: representative.accommodation.trim() || "숙소",
+        memo: representative.city.trim(),
+        category: "accommodation",
+        amount: representative.accommodationAmount ?? 0,
+        currency: representative.accommodationCurrency || "KRW",
+      }
+    })
+  }, [dayInfos, id])
+  const budgetEntries = useMemo<BudgetEntry[]>(() => {
+    const scheduleEntries = tripSchedules.map((schedule) => ({
+      id: schedule.id,
+      entryType: "schedule" as const,
+      dayNumber: schedule.dayNumber,
+      time: schedule.time,
+      title: schedule.title,
+      memo: schedule.memo,
+      category: schedule.category,
+      amount: schedule.amount,
+      currency: schedule.currency,
+      schedule,
+    }))
+
+    return [...scheduleEntries, ...tripAccommodationEntries].sort(
+      (a, b) =>
+        a.dayNumber - b.dayNumber ||
+        a.time.localeCompare(b.time) ||
+        a.title.localeCompare(b.title)
+    )
+  }, [tripAccommodationEntries, tripSchedules])
 
   const rateMap = useMemo(() => {
     const map: Record<string, number> = {
@@ -364,9 +444,9 @@ export default function TripBudgetPage() {
     router.replace("/")
   }
 
-  const totalExpense = tripSchedules.reduce((sum, schedule) => {
-    const rate = rateMap[schedule.currency] ?? 1
-    return sum + schedule.amount * rate
+  const totalExpense = budgetEntries.reduce((sum, entry) => {
+    const rate = rateMap[entry.currency] ?? 1
+    return sum + entry.amount * rate
   }, 0)
 
   const tripDuration = useMemo(() => {
@@ -644,7 +724,7 @@ export default function TripBudgetPage() {
           )}
         </aside>
 
-        <main className="flex flex-col min-h-screen bg-white">
+        <TripRouteTransition className="flex flex-col bg-white">
           <header className="px-8 pt-6 pb-4 border-b border-slate-200">
             <div className="flex items-center justify-between gap-6">
               <div>
@@ -688,15 +768,15 @@ export default function TripBudgetPage() {
                       {categoryOrder.map((category) => {
                         const isOther = category === "other"
                         const categoryItems = isOther
-                          ? tripSchedules.filter(
-                              (schedule) =>
-                                schedule.category === "other" ||
-                                !categoryOrder.includes(schedule.category)
+                          ? budgetEntries.filter(
+                              (entry) =>
+                                entry.category === "other" ||
+                                !categoryOrder.includes(entry.category)
                             )
-                          : tripSchedules.filter((schedule) => schedule.category === category)
-                        const categorySum = categoryItems.reduce((sum, schedule) => {
-                          const rate = rateMap[schedule.currency] ?? 1
-                          return sum + schedule.amount * rate
+                          : budgetEntries.filter((entry) => entry.category === category)
+                        const categorySum = categoryItems.reduce((sum, entry) => {
+                          const rate = rateMap[entry.currency] ?? 1
+                          return sum + entry.amount * rate
                         }, 0)
                         const label = categoryLabels[category] ?? category
                         const isActive = selectedCategory === category
@@ -818,15 +898,15 @@ export default function TripBudgetPage() {
                         {(() => {
                           const isOther = selectedCategory === "other"
                           const items = isOther
-                            ? tripSchedules.filter(
-                                (schedule) =>
-                                  schedule.category === "other" ||
-                                  !categoryOrder.includes(schedule.category)
+                            ? budgetEntries.filter(
+                                (entry) =>
+                                  entry.category === "other" ||
+                                  !categoryOrder.includes(entry.category)
                               )
-                            : tripSchedules.filter((schedule) => schedule.category === selectedCategory)
-                          const categorySum = items.reduce((sum, schedule) => {
-                            const rate = rateMap[schedule.currency] ?? 1
-                            return sum + schedule.amount * rate
+                            : budgetEntries.filter((entry) => entry.category === selectedCategory)
+                          const categorySum = items.reduce((sum, entry) => {
+                            const rate = rateMap[entry.currency] ?? 1
+                            return sum + entry.amount * rate
                           }, 0)
                           return (
                             <>
@@ -853,12 +933,12 @@ export default function TripBudgetPage() {
                       {(() => {
                         const isOther = selectedCategory === "other"
                         const items = isOther
-                            ? tripSchedules.filter(
-                                (schedule) =>
-                                  schedule.category === "other" ||
-                                  !categoryOrder.includes(schedule.category)
+                            ? budgetEntries.filter(
+                                (entry) =>
+                                  entry.category === "other" ||
+                                  !categoryOrder.includes(entry.category)
                               )
-                            : tripSchedules.filter((schedule) => schedule.category === selectedCategory)
+                            : budgetEntries.filter((entry) => entry.category === selectedCategory)
 
                           if (items.length === 0) {
                             return (
@@ -868,37 +948,43 @@ export default function TripBudgetPage() {
                             )
                           }
 
-                          return items.map((schedule) => {
-                            const converted = schedule.amount * (rateMap[schedule.currency] ?? 1)
-                            const isNonKrw = schedule.currency !== "KRW" && schedule.amount > 0
+                          return items.map((entry) => {
+                            const converted = entry.amount * (rateMap[entry.currency] ?? 1)
+                            const isNonKrw = entry.currency !== "KRW" && entry.amount > 0
+                            const isScheduleEntry = entry.entryType === "schedule" && Boolean(entry.schedule)
 
                             return (
-                              <div key={schedule.id}>
+                              <div key={entry.id}>
                                 <div
-                                  className="rounded-xl border border-slate-200 bg-white px-3 py-3 transition hover:border-emerald-200 hover:bg-emerald-50/30 cursor-pointer"
+                                  className={`rounded-xl border border-slate-200 bg-white px-3 py-3 transition ${
+                                    isScheduleEntry
+                                      ? "cursor-pointer hover:border-emerald-200 hover:bg-emerald-50/30"
+                                      : ""
+                                  }`}
                                   onClick={() => {
-                                    setEditingSchedule(schedule)
+                                    if (!isScheduleEntry || !entry.schedule) return
+                                    setEditingSchedule(entry.schedule)
                                     setEditModalOpen(true)
                                   }}
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                       <div className="text-xs font-semibold text-emerald-600">
-                                        Day {schedule.dayNumber} · {schedule.time || "미정"}
+                                        {formatTripDayLabel(entry.dayNumber, trip)} · {entry.time || "미정"}
                                       </div>
                                       <div className="text-base font-bold text-slate-900 truncate">
-                                        {schedule.title}
+                                        {entry.title}
                                       </div>
-                                      {schedule.memo && (
-                                        <div className="text-xs text-slate-400 truncate">{schedule.memo}</div>
+                                      {entry.memo && (
+                                        <div className="text-xs text-slate-400 truncate">{entry.memo}</div>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <div className="w-24 rounded-lg bg-slate-100 px-3 py-2 text-right text-sm font-semibold text-slate-900">
-                                        {formatCurrency(schedule.amount)}
+                                        {formatCurrency(entry.amount)}
                                       </div>
                                       <div className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-white">
-                                        {schedule.currency}
+                                        {entry.currency}
                                       </div>
                                     </div>
                                   </div>
@@ -927,7 +1013,7 @@ export default function TripBudgetPage() {
               </div>
             </div>
           </div>
-        </main>
+        </TripRouteTransition>
       </div>
 
       <BudgetAddModal
