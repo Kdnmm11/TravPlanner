@@ -531,7 +531,9 @@ export default function TripTimeTablePage() {
       const cardMid = cardTop + cardRect.height / 2
       const cardCenterX = cardRect.left - frameRect.left + cardRect.width / 2
       const placeBelow = cardMid < frameRect.height / 2
-      const width = Math.min(320, Math.max(cardRect.width + 24, 248))
+      const availableWidth = frameRect.width - 16
+      const preferredWidth = Math.min(348, Math.max(cardRect.width + 40, 280))
+      const width = availableWidth > 0 ? Math.min(preferredWidth, availableWidth) : preferredWidth
       const left = Math.max(8, Math.min(cardCenterX - width / 2, frameRect.width - width - 8))
       const top = placeBelow
         ? Math.min(cardBottom + 2, frameRect.height - estimatedPopupHeight - 8)
@@ -1185,18 +1187,24 @@ export default function TripTimeTablePage() {
                                 schedule.category === "transport" && schedule.arrivalPlace?.trim()
                                   ? `${(schedule.location ?? "").trim()} > ${schedule.arrivalPlace.trim()}`
                                   : ""
-                              const canShowTransportRouteOnSecondLine = Boolean(transportRoute) && height >= 58
+                              const isUltraCompactCard = height < 44
                               const isCompactCard = height < 58
+                              const canShowTransportRouteOnSecondLine = Boolean(transportRoute) && height >= 68
+                              const canShowTransportRouteInline = Boolean(transportRoute) && !isCompactCard
                               const compactBottomPaddingPx = isCompactCard
-                                ? Math.max(7, Math.min(12, Math.round((height - 32) * 0.22) + 7))
+                                ? Math.max(5, Math.min(10, Math.round((height - 32) * 0.2) + 6))
                                 : 4
-                              const compactTopPaddingPx = isCompactCard ? Math.max(3, Math.round(compactBottomPaddingPx * 0.45)) : 4
+                              const compactTopPaddingPx = isCompactCard ? Math.max(2, Math.round(compactBottomPaddingPx * 0.45)) : 4
                               const cardInnerStyle = isCompactCard
                                 ? {
                                     paddingTop: `${compactTopPaddingPx}px`,
                                     paddingBottom: `${compactBottomPaddingPx}px`,
                                   }
                                 : undefined
+                              const titleFontSize = isUltraCompactCard ? 12 : 13
+                              const timeFontSize = isUltraCompactCard ? 10 : 11
+                              const categoryFontSize = isUltraCompactCard ? 9 : 10
+                              const routeFontSize = isUltraCompactCard ? 10 : 11
 
                               return (
                                 <div key={schedule.id}>
@@ -1216,33 +1224,59 @@ export default function TripTimeTablePage() {
                                     }
                                   >
                                     <div
-                                      className={`flex h-full flex-col px-2 ${isCompactCard ? "gap-0.5" : "gap-1 py-1"}`}
+                                      className={`flex h-full flex-col overflow-hidden px-2 ${
+                                        isCompactCard ? "justify-between" : "gap-1 py-1"
+                                      }`}
                                       style={cardInnerStyle}
                                     >
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="truncate font-semibold text-emerald-700">{timeRange}</span>
-                                        <span className="ml-auto inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                                        <span
+                                          className="min-w-0 truncate font-semibold leading-none text-emerald-700"
+                                          style={{ fontSize: `${timeFontSize}px` }}
+                                        >
+                                          {timeRange}
+                                        </span>
+                                        <span
+                                          className="ml-auto inline-flex shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 leading-none text-emerald-700"
+                                          style={{ fontSize: `${categoryFontSize}px` }}
+                                        >
                                           {categoryLabels[schedule.category] ?? schedule.category}
                                         </span>
                                       </div>
                                       {transportRoute ? (
                                         canShowTransportRouteOnSecondLine ? (
-                                          <div>
-                                            <div className="truncate text-[13px] font-semibold text-slate-900">
+                                          <div className="min-w-0">
+                                            <div
+                                              className="truncate font-semibold leading-[1.1] text-slate-900"
+                                              style={{ fontSize: `${titleFontSize}px` }}
+                                            >
                                               {schedule.title}
                                             </div>
-                                            <div className="mt-1 truncate text-[11px] font-medium text-slate-400">
+                                            <div
+                                              className="mt-0.5 truncate font-medium leading-none text-slate-400"
+                                              style={{ fontSize: `${routeFontSize}px` }}
+                                            >
                                               {transportRoute}
                                             </div>
                                           </div>
-                                        ) : (
-                                          <div className="truncate text-[13px]">
+                                        ) : canShowTransportRouteInline ? (
+                                          <div className="truncate leading-[1.1]" style={{ fontSize: `${titleFontSize}px` }}>
                                             <span className="font-semibold text-slate-900">{schedule.title}</span>
                                             <span className="ml-2 font-medium text-slate-400">{transportRoute}</span>
                                           </div>
+                                        ) : (
+                                          <div
+                                            className="truncate font-semibold leading-[1.1] text-slate-900"
+                                            style={{ fontSize: `${titleFontSize}px` }}
+                                          >
+                                            {schedule.title}
+                                          </div>
                                         )
                                       ) : (
-                                        <div className="truncate text-[13px] font-semibold text-slate-900">
+                                        <div
+                                          className="truncate font-semibold leading-[1.1] text-slate-900"
+                                          style={{ fontSize: `${titleFontSize}px` }}
+                                        >
                                           {schedule.title}
                                         </div>
                                       )}
@@ -1263,7 +1297,7 @@ export default function TripTimeTablePage() {
                 {selectedSchedule && selectedSchedulePopupLayout && (
                   <div
                     data-schedule-popup
-                    className={`absolute z-30 rounded-[28px] border border-slate-200/90 bg-white/98 px-4 py-4 text-sm text-slate-700 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur-[2px] transition-[opacity,transform] ${
+                    className={`absolute z-30 rounded-[20px] border border-slate-200/90 bg-white/98 px-[18px] py-4 text-sm text-slate-700 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur-[2px] transition-[opacity,transform] ${
                       isSchedulePopupVisible ? "opacity-100 translate-y-0 scale-100" : "pointer-events-none opacity-0 translate-y-2 scale-[0.985]"
                     }`}
                     style={{
@@ -1290,19 +1324,19 @@ export default function TripTimeTablePage() {
                     </div>
                     <div className="mt-3 space-y-3">
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                        <div className="mb-1.5 text-[9px] font-semibold tracking-[0.08em] text-slate-900">
                           {selectedScheduleDetailLabel}
                         </div>
                         <div className="flex min-h-[42px] items-center rounded-lg bg-slate-100 px-3 py-2">
-                          <div className="text-sm font-medium leading-5 text-slate-500">
+                          <div className="text-[13px] font-medium leading-5 text-slate-900">
                             {selectedScheduleLocationSummary}
                           </div>
                         </div>
                       </div>
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-slate-400">메모</div>
+                        <div className="mb-1.5 text-[9px] font-semibold tracking-[0.08em] text-slate-900">메모</div>
                         <div className="min-h-[42px] rounded-lg bg-slate-100 px-3 py-2">
-                          <div className="text-sm leading-5 text-slate-500">
+                          <div className="text-[13px] leading-5 text-slate-900">
                             {(selectedSchedule.memo ?? "").trim() || "메모 없음"}
                           </div>
                         </div>
